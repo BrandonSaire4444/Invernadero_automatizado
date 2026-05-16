@@ -1,0 +1,239 @@
+================================================================================
+          BITÁCORA TÉCNICA E HISTORIAL OFICIAL - PROYECTO: hidroponia_pro
+================================================================================
+Fecha de Emisión: 16 de Mayo de 2026
+Desarrollador: Paul Quispe
+Entorno Operativo: Linux Mint Debian Edition 7 (LMDE 7) - Máquina local: adhara
+Arquitectura del Sistema: Sistema Híbrido IoT (Hardware Real + Simulación Móvil)
+================================================================================
+
+--------------------------------------------------------------------------------
+1. ESQUEMA DE ARQUITECTURA DE DOBLE NODO HÍBRIDO (DIAGRAMA DE FLUJO)
+--------------------------------------------------------------------------------
+
+                      +-----------------------------------+
+                      |      MÁQUINA LOCAL (adhara)       |
+                      |                                   |
+                      |   +---------------------------+   |
+                      |   |    Contenedor Docker      |   |
+                      |   |   (Apache Cassandra 4.x)  |   |
+                      |   +-------------+-------------+   |
+                      |                 |                 |
+                      |   +-------------+-------------+   |
+                      |   |   Backend FastAPI (Py)    |   |
+                      |   +--------+-----------+------+   |
+                      +------------|-----------|----------+
+                                   |           |
+            [Canal 1: USB Serial]  |           |  [Canal 2: WebSockets]
+                 (115200 baudios)  |           |  (Red Wi-Fi Local)
+                                   v           v
+                        +----------+--+     +--+----------+
+                        |   ARDUINO   |     |   CELULAR   |
+                        |  FÍSICO     |     |   ANDROID   |
+                        +-------------+     +-------------+
+
+* CANAL 1 (FÍSICO): El Arduino lee sensores reales, transmite por USB a `/dev/ttyACM0`, 
+  FastAPI procesa según las reglas de Cassandra, guarda con origen 'INVERNADERO_REAL' 
+  y devuelve una cadena de bits para conmutar los actuadores físicos.
+* CANAL 2 (VIRTUAL): El celular Android abre un WebSocket persistente, envía telemetría 
+  simulada mediante deslizadores (SeekBars), el backend procesa y guarda con origen 
+  'SIMULADOR_ANDROID' y responde con un JSON para cambiar los colores en la pantalla.
+
+--------------------------------------------------------------------------------
+2. ESTRUCTURA ACTUAL DE DIRECTORIOS EN EL DISCO DURO (MÁQUINA: adhara)
+--------------------------------------------------------------------------------
+Ruta raíz: `/mnt/projects/hidroponia_pro/`
+
+.
+├── backend_fastapi/            --> Espacio del Servidor de Aplicaciones
+│   ├── main.py                 --> Script centralizado de FastAPI, Lógica Serial y WS
+│   └── venv/                   --> Entorno virtual aislado de Python 3.11
+│       ├── bin/
+│       ├── include/
+│       └── lib/
+├── doc/                        --> Historial de documentación técnica
+│   ├── android_anterior/
+│   ├── android_vigente/
+│   ├── diccionario de datos    --> Documento de respaldo de tablas CQL
+│   └── ilustracion/
+└── HidroponiaProApp/           --> (PROXIMAMENTE) Proyecto Nativo en Kotlin
+
+--------------------------------------------------------------------------------
+3. DICCIONARIO DE DATOS OFICIAL (APACHE CASSANDRA)
+--------------------------------------------------------------------------------
+Keyspace: hidroponia_pro
+Estrategia de Réplica: SimpleStrategy | Factor: 1
+
+TABLA 1: usuarios (Control de acceso seguro OAuth2)
+- username (text) [PRIMARY KEY]
+- password_hash (text)
+- nombre (text)
+
+TABLA 2: config_cultivos (Umbrales operativos maestros para el Invernadero)
+- id_cultivo (text) [PRIMARY KEY]
+- nombre_verdura (text)
+- temp_min (float), temp_max (float)
+- hum_min (float), hum_max (float)
+- ph_min (float), ph_max (float)
+- luz_min (float), luz_max (float)
+
+TABLA 3: lecturas_sensores (Series temporales inmutables de alta velocidad)
+- origen (text) [PARTITION KEY] -> Valores: 'INVERNADERO_REAL' o 'SIMULADOR_ANDROID'
+- fecha_hora (timestamp) [CLUSTERING KEY DESC]
+- temperatura (float), humedad (float), ph (float), luz (float)
+
+TABLA 4: estado_actuadores (Estado instantáneo llave-valor de las respuestas físicas)
+- componente (text) [PRIMARY KEY] -> 'actuador_temp', 'actuador_hum', etc.
+- estado (text) -> 'VERDE', 'AZUL', 'ROJO'
+- ultima_actualizacion (timestamp)
+
+--------------------------------------------------------------------------------
+4. SCRIPT DEL BACKEND OPERACIONAL ACTUAL COMPLETADO (`main.py`)
+--------------------------------------------------------------------------------
+Ubicación: `/mnt/projects/hidroponia_pro/backend_fastapi/main.py`
+
+Se corrigieron dos problemas críticos en este script:
+1. Bloqueo de Hardware: Se forzó el control DTR (Data Terminal Ready) en Python 
+   para resetear y despertar la transmisión de datos del Arduino en Linux.
+2. Tipado Cassandra: Se forzó la conversión de variables analógicas a float nativo 
+   de Python para evitar fallas de precisión de 32 a 64 bits al insertar en CQL.
+
+```python
+import asyncio
+import json
+import serial
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from pydantic import BaseModel
+from cassandra.cluster import Cluster
+from datetime import datetime
+
+app = FastAPI(title="hidroponia_pro API", version="2.0")
+
+cluster = Cluster(['127.0.0.1'])
+session = cluster.connect('hidroponia_pro')
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: list[WebSocket] = []
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.remove(websocket)
+    async def send_personal_message(self, message: str, websocket: WebSocket):
+        await websocket.send_text(message)
+
+manager = ConnectionManager()
+
+def evaluar_regulacion(temp, hum, ph, luz):
+    query = "SELECT temp_min, temp_max, hum_min, hum_max, ph_min, ph_max, luz_min, luz_max FROM config_cultivos WHERE id_cultivo = %s"
+    config = session.execute(query, ('lechuga_01',)).one()
+    
+    if not config:
+        t_min, t_max, h_min, h_max, p_min, p_max, l_min, l_max = 18.0, 26.0, 40.0, 70.0, 5.5, 6.5, 40.0, 80.0
+    else:
+        t_min, t_max = config.temp_min, config.temp_max
+        h_min, h_max = config.hum_min, config.hum_max
+        p_min, p_max = config.ph_min, config.ph_max
+        l_min, l_max = config.luz_min, config.luz_max
+
+    cmd = ""
+    cmd += "001" if temp < t_min else ("100" if temp > t_max else "010")
+    cmd += "001" if hum < h_min else ("100" if hum > h_max else "010")
+    cmd += "001" if ph < p_min else ("100" if ph > p_max else "010")
+    cmd += "001" if luz < l_min else ("100" if luz > l_max else "010")
+    
+    ahora = datetime.now()
+    u_query = "INSERT INTO estado_actuadores (componente, estado, ultima_actualizacion) VALUES (%s, %s, %s)"
+    session.execute(u_query, ('actuador_temp', 'AZUL' if temp < t_min else ('ROJO' if temp > t_max else 'VERDE'), ahora))
+    session.execute(u_query, ('actuador_hum', 'AZUL' if hum < h_min else ('ROJO' if hum > h_max else 'VERDE'), ahora))
+    session.execute(u_query, ('actuador_ph', 'AZUL' if ph < p_min else ('ROJO' if ph > p_max else 'VERDE'), ahora))
+    session.execute(u_query, ('actuador_luz', 'AZUL' if luz < l_min else ('ROJO' if luz > l_max else 'VERDE'), ahora))
+    
+    return cmd
+
+def cmd_to_json(cmd):
+    def mapear(segmento):
+        if segmento == "001": return "AZUL"
+        if segmento == "100": return "ROJO"
+        return "VERDE"
+    return {
+        "actuador_temp": mapear(cmd[0:3]),
+        "actuador_hum": mapear(cmd[3:6]),
+        "actuador_ph": mapear(cmd[6:9]),
+        "actuador_luz": mapear(cmd)
+    }
+
+@app.post("/api/login", response_model=Token)
+async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    query = "SELECT password_hash FROM usuarios WHERE username = %s"
+    resultado = session.execute(query, (form_data.username,)).one()
+    if resultado and resultado.password_hash == form_data.password:
+        return {"access_token": form_data.username, "token_type": "bearer"}
+    raise HTTPException(status_code=400, detail="Usuario o contraseña incorrectos")
+
+async def escuchar_arduino():
+    try:
+        puerto = serial.Serial('/dev/ttyACM0', 115200, timeout=1)
+        puerto.setDTR(False)
+        await asyncio.sleep(1)
+        puerto.flushInput()
+        puerto.setDTR(True)
+        await asyncio.sleep(2)
+        print("[SERIAL] Conectado exitosamente al Arduino en /dev/ttyACM0")
+        
+        while True:
+            if puerto.in_waiting > 0:
+                linea = puerto.readline().decode('utf-8', errors='ignore').strip()
+                print(f"[DEBUG SERIAL] Procesando buffer: {linea}")
+                partes = linea.split(',')
+                if len(partes) == 5 and partes[0] == "REAL":
+                    temp = float(partes[1])
+                    hum  = float(partes[2])
+                    ph   = float(partes[3])
+                    luz  = float(partes[4])
+                    
+                    comando_bits = evaluar_regulacion(temp, hum, ph, luz)
+                    puerto.write((comando_bits + "\n").encode())
+                    
+                    ahora = datetime.now()
+                    query = "INSERT INTO lecturas_sensores (origen, fecha_hora, temperatura, humedad, ph, luz) VALUES (%s, %s, %s, %s, %s, %s)"
+                    session.execute(query, ('INVERNADERO_REAL', ahora, temp, hum, ph, luz))
+            await asyncio.sleep(0.1)
+    except Exception as e:
+        print(f"[SERIAL] Error crítico en el subproceso del hardware: {e}")
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(escuchar_arduino())
+
+@app.websocket("/ws/invernadero")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            payload = json.loads(data)
+            temp = float(payload["temp"])
+            hum = float(payload["hum"])
+            ph = float(payload["ph"])
+            luz = float(payload["luz"])
+            
+            ahora = datetime.now()
+            query = "INSERT INTO lecturas_sensores (origen, fecha_hora, temperatura, humedad, ph, luz) VALUES (%s, %s, %s, %s, %s, %s)"
+            session.execute(query, ('SIMULADOR_ANDROID', ahora, temp, hum, ph, luz))
+            
+            comando_bits = evaluar_regulacion(temp, hum, ph, luz)
+            respuesta_json = cmd_to_json(comando_bits)
+            await manager.send_personal_message(json.dumps(respuesta_json), websocket)
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+
+@app.get("/")
+def read_root():
+    return {"status": "Servidor HidroponiaPro Operacional", "motor": "FastAPI"}

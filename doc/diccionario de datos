@@ -1,0 +1,133 @@
+================================================================================
+          DICCIONARIO DE DATOS OFICIAL - PROYECTO: hidroponia_pro
+================================================================================
+
+Motor de Base de Datos: Apache Cassandra v4.x (Contenedor Docker)
+Keyspace Principal:    hidroponia_pro
+Estrategia Réplica:   SimpleStrategy
+Factor de Réplica:    1
+
+--------------------------------------------------------------------------------
+1. TABLA: usuarios
+--------------------------------------------------------------------------------
+Descripción: Almacena las credenciales centralizadas y la información de 
+             identidad del personal autorizado para interactuar con la API 
+             de FastAPI y la aplicación móvil Android.
+Tipo de Estructura: Tabla de persistencia estática / Control de Acceso.
+
+Campos:
+* username (text) [PRIMARY KEY]
+  -> Identificador único de inicio de sesión (Ej: 'admin').
+* password_hash (text)
+  -> Contraseña o hash seguro para la verificación del flujo OAuth2.
+* nombre (text)
+  -> Nombre completo del operador del sistema (Ej: 'Paul Quispe').
+
+Sentencia DDL de Creación:
+CREATE TABLE usuarios (
+    username text PRIMARY KEY,
+    password_hash text,
+    nombre text
+);
+
+--------------------------------------------------------------------------------
+2. TABLA: config_cultivos
+--------------------------------------------------------------------------------
+Descripción: Tabla maestra de referencia paramétrica. Define los umbrales 
+             operativos críticos (mínimos y máximos) para cada tipo de planta. 
+             Es el núcleo que permite la regulación dinámica sin alterar el 
+             código Python de soporte.
+Tipo de Estructura: Tabla de Configuración de Entorno.
+
+Campos:
+* id_cultivo (text) [PRIMARY KEY]
+  -> Código único del cultivo en formato snake_case (Ej: 'lechuga_01').
+* nombre_verdura (text)
+  -> Nombre comercial o común de la especie vegetal.
+* temp_min (float)
+  -> Límite inferior de temperatura permitido en grados Celsius (°C).
+* temp_max (float)
+  -> Límite superior de temperatura permitido en grados Celsius (°C).
+* hum_min (float)
+  -> Límite inferior de humedad relativa porcentual (%).
+* hum_max (float)
+  -> Límite superior de humedad relativa porcentual (%).
+* ph_min (float)
+  -> Límite inferior de la escala de acidez de la solución (0 - 14).
+* ph_max (float)
+  -> Límite superior de la escala de acidez de la solución (0 - 14).
+* luz_min (float)
+  -> Límite inferior de radiación lumínica requerida (%).
+* luz_max (float)
+  -> Límite superior de radiación lumínica requerida (%).
+
+Sentencia DDL de Creación:
+CREATE TABLE config_cultivos (
+    id_cultivo text PRIMARY KEY,
+    nombre_verdura text,
+    temp_min float,
+    temp_max float,
+    hum_min float,
+    hum_max float,
+    ph_min float,
+    ph_max float,
+    luz_min float,
+    luz_max float    
+);
+
+--------------------------------------------------------------------------------
+3. TABLA: lecturas_sensores
+--------------------------------------------------------------------------------
+Descripción: Registro histórico continuo e inmutable de las métricas ambientales 
+             del invernadero. Diseñado bajo el paradigma de Cassandra para 
+             manejar series temporales masivas de alta velocidad de escritura.
+Tipo de Estructura: Serie Temporal (Time-Series) optimizada.
+
+Campos:
+* origen (text) [PARTITION KEY]
+  -> Determina el nodo de guardado. Valores: 'INVERNADERO_REAL' o 'SIMULADOR_ANDROID'.
+* fecha_hora (timestamp) [CLUSTERING KEY]
+  -> Marca temporal exacta de la captura. Ordenada internamente de forma DESC.
+* temperatura (float)
+  -> Medición analógica procesada de la temperatura (°C).
+* humedad (float)
+  -> Medición analógica procesada de la humedad relativa (%).
+* ph (float)
+  -> Nivel de pH calculado de la solución recirculante.
+* luz (float)
+  -> Nivel de luminosidad ambiental captada por la celda.
+
+Sentencia DDL de Creación:
+CREATE TABLE lecturas_sensores (
+    origen text,
+    fecha_hora timestamp,
+    temperatura float,
+    humedad float,
+    ph float,
+    luz float,
+    PRIMARY KEY (origen, fecha_hora)
+) WITH CLUSTERING ORDER BY (fecha_hora DESC);
+
+--------------------------------------------------------------------------------
+4. TABLA: estado_actuadores
+--------------------------------------------------------------------------------
+Descripción: Guarda el estado instantáneo de las respuestas físicas del sistema. 
+             Mantiene la persistencia de los colores asignados tras la última 
+             evaluación del algoritmo de control.
+Tipo de Estructura: Tabla de Estado Llave-Valor (Key-Value State Store).
+
+Campos:
+* componente (text) [PRIMARY KEY]
+  -> Identificador del actuador ('actuador_temp', 'actuador_hum', etc.).
+* estado (text)
+  -> Estado cromático operativo del relé/LED ('VERDE', 'AZUL', 'ROJO').
+* ultima_actualizacion (timestamp)
+  -> Estampa de tiempo exacta del último cambio de estado ordenado por el backend.
+
+Sentencia DDL de Creación:
+CREATE TABLE estado_actuadores (
+    componente text PRIMARY KEY,
+    estado text,
+    ultima_actualizacion timestamp
+);
+================================================================================

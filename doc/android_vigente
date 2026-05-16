@@ -1,0 +1,80 @@
+#include <Wire.h> 
+#include <LiquidCrystal_I2C.h>
+
+// Configuración de tu LCD (Dirección 0x27, 16 columnas, 2 filas)
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// Definición de pines para los 4 LEDs RGB (Semáforos de control)
+const int redTemp = 2;   const int greenTemp = 3;   const int blueTemp = 4;
+const int redHum = 5;    const int greenHum = 6;    const int blueHum = 7;
+const int redPH = 8;     const int greenPH = 9;     const int bluePH = 10;
+const int redLuz = 11;   const int greenLuz = 12;   const int blueLuz = 13;
+
+void setup() {
+  // CORRECCIÓN 1: Velocidad unificada con el script de Python en LMDE 7
+  Serial.begin(115200);
+
+  // Inicializar el LCD
+  lcd.init();
+  lcd.backlight();
+
+  // Configurar todos los pines de los LEDs como salida e inicializarlos apagados
+  for (int i = 2; i <= 13; i++) {
+    pinMode(i, OUTPUT);
+    digitalWrite(i, LOW);
+  }
+
+  // CORRECCIÓN 2: Mensaje de inicio limpio y libre de rastros antiguos
+  lcd.setCursor(0, 0);
+  lcd.print(" HIDROPONIA_PRO ");
+  lcd.setCursor(0, 1);
+  lcd.print("CONNECTING TO PY");
+  delay(1500);
+  lcd.clear();
+}
+
+void loop() {
+  // 1. LECTURA DE SENSORES (Potenciómetros en A0, A1, A2, A3)
+  int rawTemp = analogRead(A0);
+  int rawHum  = analogRead(A1);
+  int rawPH   = analogRead(A2);
+  int rawLuz  = analogRead(A3);
+
+  // Conversión a valores reales operativos
+  float temp = rawTemp * (50.0 / 1023.0);   // Escala 0-50°C
+  float hum  = rawHum * (100.0 / 1023.0);   // Escala 0-100%
+  float ph   = rawPH * (14.0 / 1023.0);     // Escala 0-14 pH
+  float luz  = rawLuz * (100.0 / 1023.0);   // Escala 0-100%
+
+  // CORRECCIÓN 3: Envío de datos bajo el protocolo estricto de la Arquitectura V2
+  // Formato: REAL,temp,hum,ph,luz
+  Serial.print("REAL,");
+  Serial.print(temp, 1); Serial.print(",");
+  Serial.print(hum, 1);  Serial.print(",");
+  Serial.print(ph, 1);   Serial.print(",");
+  Serial.println(luz, 1);
+
+  // CORRECCIÓN 4: Recepción de la cadena de bits de control calculada por Python + Cassandra
+  // Python enviará una cadena de 12 caracteres (ceros y unos) terminada en '\n'
+  if (Serial.available() >= 12) {
+    String comando = Serial.readStringUntil('\n');
+    if (comando.length() >= 12) {
+      for (int i = 0; i < 12; i++) {
+        int estado = (comando.charAt(i) == '1') ? HIGH : LOW;
+        // Mapea los bits directo a los pines del 2 al 13
+        digitalWrite(i + 2, estado); 
+      }
+    }
+  }
+
+  // 3. ACTUALIZAR LCD LOCAL 16x2
+  lcd.setCursor(0, 0);
+  lcd.print("T:"); lcd.print((int)temp); lcd.print("C ");
+  lcd.print("H:"); lcd.print((int)hum);  lcd.print("% ");
+  
+  lcd.setCursor(0, 1);
+  lcd.print("PH:"); lcd.print(ph, 1);
+  lcd.print(" L:"); lcd.print((int)luz); lcd.print("% ");
+
+  delay(500); // Frecuencia de muestreo óptima para series temporales (0.5 segundos)
+}

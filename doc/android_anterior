@@ -1,0 +1,108 @@
+#include <Wire.h> 
+#include <LiquidCrystal_I2C.h>
+
+// Configuración de tu LCD (Dirección 0x27, 16 columnas, 2 filas)
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// Definición de pines para los 4 LEDs RGB (Semáforos de control)
+// RGB 1 - Temperatura
+const int redTemp = 2;
+const int greenTemp = 3;
+const int blueTemp = 4;
+
+// RGB 2 - Humedad
+const int redHum = 5;
+const int greenHum = 6;
+const int blueHum = 7;
+
+// RGB 3 - pH
+const int redPH = 8;
+const int greenPH = 9;
+const int bluePH = 10;
+
+// RGB 4 - Luz
+const int redLuz = 11;
+const int greenLuz = 12;
+const int blueLuz = 13;
+
+void setup() {
+  // Iniciar Serial para comunicación con Python (LMDE 7)
+  Serial.begin(9600);
+
+  // Inicializar el LCD
+  lcd.init();
+  lcd.backlight();
+
+  // Configurar todos los pines de los LEDs como salida
+  for (int i = 2; i <= 13; i++) {
+    pinMode(i, OUTPUT);
+  }
+
+  // Mensaje de inicio
+  lcd.setCursor(0, 0);
+  lcd.print(" SISTEMA SIG@ ");
+  lcd.setCursor(0, 1);
+  lcd.print("HIDROPONIAPRO V1");
+  delay(2000);
+  lcd.clear();
+}
+
+void loop() {
+  // 1. LECTURA DE SENSORES (Potenciómetros en A0, A1, A2, A3)
+  int rawTemp = analogRead(A0);
+  int rawHum  = analogRead(A1);
+  int rawPH   = analogRead(A2);
+  int rawLuz  = analogRead(A3);
+
+  // Conversión a valores reales
+  float temp = rawTemp * (50.0 / 1023.0);   // Escala 0-50°C
+  float hum  = rawHum * (100.0 / 1023.0);   // Escala 0-100%
+  float ph   = rawPH * (14.0 / 1023.0);     // Escala 0-14 pH
+  float luz  = rawLuz * (100.0 / 1023.0);   // Escala 0-100%
+
+  // 2. LÓGICA DE ALERTAS (LEDs RGB)
+  
+  // Control Temperatura (Ideal 18-26°C)
+  controlarRGB(redTemp, greenTemp, blueTemp, temp, 18, 26);
+  
+  // Control Humedad (Ideal 40-70%)
+  controlarRGB(redHum, greenHum, blueHum, hum, 40, 70);
+  
+  // Control pH (Ideal 5.5-6.5)
+  controlarRGB(redPH, greenPH, bluePH, ph, 5.5, 6.5);
+  
+  // Control Luz (Ideal 40-80%)
+  controlarRGB(redLuz, greenLuz, blueLuz, luz, 40, 80);
+
+  // 3. ACTUALIZAR LCD 16x2
+  lcd.setCursor(0, 0);
+  lcd.print("T:"); lcd.print((int)temp); lcd.print("C ");
+  lcd.print("H:"); lcd.print((int)hum); lcd.print("% ");
+
+  lcd.setCursor(0, 1);
+  lcd.print("PH:"); lcd.print(ph, 1);
+  lcd.print(" L:"); lcd.print((int)luz); lcd.print("% ");
+
+  // 4. ENVIAR DATOS A SERIAL (Para el backend en Python)
+  // Formato: temp,hum,ph,luz
+  Serial.print(temp); Serial.print(",");
+  Serial.print(hum);  Serial.print(",");
+  Serial.print(ph);   Serial.print(",");
+  Serial.println(luz);
+
+  delay(1000); // Muestreo cada segundo
+}
+
+// Función auxiliar para manejar los colores del semáforo
+void controlarRGB(int r, int g, int b, float valor, float min, float max) {
+  if (valor < min) {
+    // Azul: Bajo
+    digitalWrite(r, LOW); digitalWrite(g, LOW); digitalWrite(b, HIGH);
+  } else if (valor > max) {
+    // Rojo: Alto
+    digitalWrite(r, HIGH); digitalWrite(g, LOW); digitalWrite(b, LOW);
+  } else {
+    // Verde: Óptimo
+    digitalWrite(r, LOW); digitalWrite(g, HIGH); digitalWrite(b, LOW);
+  }
+}

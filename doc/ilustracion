@@ -1,0 +1,336 @@
+================================================================================
+                       PROYECTO INTEGRAL: hidroponia_pro
+                 DOCUMENTO TÉCNICO DE ARQUITECTURA HÍBRIDA V2
+================================================================================
+
+1. ARQUITECTURA DEL FLUJO HÍBRIDO UNIFICADO
+--------------------------------------------------------------------------------
+El sistema está diseñado para operar de forma transparente con un entorno físico
+(sensores reales en invernadero) o simulado (aplicación móvil Android), usando
+un backend centralizado en Python con FastAPI que actúa como el único cerebro del
+sistema, persistiendo la información en un contenedor local de Cassandra.
+
+Esquema de conexiones:
+[ Celular Android (App) ]  <---(WebSocket)--->  [ Backend FastAPI ]  ---> [ Cassandra (Docker) ]
+                                                       ^
+[ Arduino (Físico) ]      <=====(Serial USB)==========┛
+
+* Centralización: El script de Python (FastAPI) es el único que toma decisiones.
+  Recibe datos de cualquier fuente, consulta las tablas de referencia en Cassandra
+  para evaluar rangos, guarda los históricos y actualiza el estado de los actuadores.
+* Arduino Físico: Es un esclavo puro de sensores y actuadores. Envía lecturas 
+  brutas por Serial USB y espera una cadena de bits para activar los pines.
+* App Móvil (Android): Simula los sensores mediante Sliders (SeekBar) y envía
+  los datos por WebSockets. Recibe respuestas JSON en tiempo real para pintar
+  LEDs virtuales en la pantalla basándose en la base de datos.
+
+--------------------------------------------------------------------------------
+2. PASO 1: BASE DE DATOS - MODELO DE DATOS EN CASSANDRA (CQL)
+--------------------------------------------------------------------------------
+Ejecutar los siguientes comandos en el contenedor Docker de Cassandra para crear
+el espacio de claves y las cuatro tablas analizadas para el control completo.
+
+DROP KEYSPACE IF EXISTS siga_hidroponia;
+
+CREATE KEYSPACE hidroponia_pro 
+WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1};
+
+USE hidroponia_pro;
+
+-- 1. Tabla para control de acceso (Login)
+CREATE TABLE usuarios (
+    username text PRIMARY KEY,
+    password_hash text,
+    nombre text
+);
+
+-- 2. Tabla de referencia de cultivos (Parámetros base para la regulación dinámica)
+CREATE TABLE config_cultivos (
+    id_cultivo text PRIMARY KEY,
+    nombre_verdura text,
+    temp_min float,
+    temp_max float,
+    hum_min float,
+    hum_max float,
+    ph_min float,
+    ph_max float,
+    luz_min float,
+    luz_max float    
+);
+
+-- 3. Tabla para el histórico de sensores (Optimizada para series temporales)
+CREATE TABLE lecturas_sensores (
+    origen text,
+    fecha_hora timestamp,
+    temperatura float,
+    humedad float,
+    ph float,
+    luz float,
+    PRIMARY KEY (origen, fecha_hora)
+) WITH CLUSTERING ORDER BY (fecha_hora DESC);
+
+-- 4. Tabla de estado actual instantáneo de los actuadores
+CREATE TABLE estado_actuadores (
+    componente text PRIMARY KEY,
+    estado text,
+    ultima_actualizacion timestamp
+);
+
+-- Inserciones iniciales de prueba (Semilla del sistema)
+INSERT INTO usuarios (username, password_hash, nombre) 
+VALUES ('admin', 'admin123', 'Paul Quispe');
+
+INSERT INTO config_cultivos (id_cultivo, nombre_verdura, temp_min, temp_max, hum_min, hum_max, ph_min, ph_max, luz_min, luz_max)
+VALUES ('lechuga_01', 'Lechuga Hidropónica', 18.0, 26.0, 40.0, 70.0, 5.5, 6.5, 40.0, 80.0);
+
+--------------------------------------------------------------------------------
+3. PASO 2: CÓDIGO DEL BACKEND (Python + FastAPI + Serial + Cassandra)
+--------------------------------------------------------------------------------
+Guardar este archivo como 'main.py' en tu entorno LMDE 7. Asegúrate de instalar:
+pip install fastapi uvicorn pyserial cassandra-driver
+
+import asyncio
+import json
+import serial
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from pydantic import BaseModel
+from cassandra.cluster import Cluster
+from datetime import datetime
+
+app = FastAPI(title="hidroponia_pro API", version="2.0")
+
+# --- CONEXIÓN CASSANDRA (DOCKER LOCAL) ---
+cluster = Cluster(['127.0.0.1'])
+session = cluster.connect('hidroponia_pro')
+
+# --- MODELOS DE SEGURIDAD ---
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: list[WebSocket] = []
+
+    async connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.remove(websocket)
+
+    async send_personal_message(self, message: str, websocket: WebSocket):
+        await websocket.send_text(message)
+
+manager = ConnectionManager()
+
+# --- LÓGICA DE REGULACIÓN DINÁMICA CONSULTANDO CASSANDRA ---
+def evaluar_regulacion(temp, hum, ph, luz):
+    # Consulta los límites operativos cargados en la base de datos para la lechuga
+    query = "SELECT temp_min, temp_max, hum_min, hum_max, ph_min, ph_max, luz_min, luz_max FROM config_cultivos WHERE id_cultivo = %s"
+    config = session.execute(query, ('lechuga_01',)).one()
+    
+    # Si por alguna razón no encuentra la config, usa parámetros de respaldo por seguridad
+    if not config:
+        t_min, t_max, h_min, h_max, p_min, p_max, l_min, l_max = 18.0, 26.0, 40.0, 70.0, 5.5, 6.5, 40.0, 80.0
+    else:
+        t_min, t_max = config.temp_min, config.temp_max
+        h_min, h_max = config.hum_min, config.hum_max
+        p_min, p_max = config.ph_min, config.ph_max
+        l_min, l_max = config.luz_min, config.luz_max
+
+    cmd = ""
+    # Temperatura -> Azul (Bajo), Rojo (Alto), Verde (Óptimo)
+    cmd += "001" if temp < t_min else ("100" if temp > t_max else "010")
+    # Humedad
+    cmd += "001" if hum < h_min else ("100" if hum > h_max else "010")
+    # pH
+    cmd += "001" if ph < p_min else ("100" if ph > p_max else "010")
+    # Luz
+    cmd += "001" if luz < l_min else ("100" if luz > l_max else "010")
+    
+    # Persistir los estados calculados en la tabla de actuadores
+    ahora = datetime.now()
+    u_query = "INSERT INTO estado_actuadores (componente, estado, ultima_actualizacion) VALUES (%s, %s, %s)"
+    session.execute(u_query, ('actuador_temp', 'AZUL' if temp < t_min else ('ROJO' if temp > t_max else 'VERDE'), ahora))
+    session.execute(u_query, ('actuador_hum', 'AZUL' if hum < h_min else ('ROJO' if hum > h_max else 'VERDE'), ahora))
+    session.execute(u_query, ('actuador_ph', 'AZUL' if ph < p_min else ('ROJO' if ph > p_max else 'VERDE'), ahora))
+    session.execute(u_query, ('actuador_luz', 'AZUL' if luz < l_min else ('ROJO' if luz > l_max else 'VERDE'), ahora))
+    
+    return cmd
+
+def cmd_to_json(cmd):
+    def mapear(segmento):
+        if segmento == "001": return "AZUL"
+        if segmento == "100": return "ROJO"
+        return "VERDE"
+    return {
+        "actuador_temp": mapear(cmd[0:3]),
+        "actuador_hum": mapear(cmd[3:6]),
+        "actuador_ph": mapear(cmd[6:9]),
+        "actuador_luz": mapear(cmd[9:12])
+    }
+
+# --- ENDPOINT DE AUTENTICACIÓN (LOGIN CONFIGURADO CON CASSANDRA) ---
+@app.post("/api/login", response_model=Token)
+async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    query = "SELECT password_hash FROM usuarios WHERE username = %s"
+    resultado = session.execute(query, (form_data.username,)).one()
+    
+    if resultado and resultado.password_hash == form_data.password:
+        return {"access_token": form_data.username, "token_type": "bearer"}
+    
+    raise HTTPException(status_code=400, detail="Usuario o contraseña incorrectos")
+
+# --- HILO ASÍNCRONO: LECTURA DEL ARDUINO FÍSICO (SERIAL USB) ---
+async def escuchar_arduino():
+    try:
+        puerto = serial.Serial('/dev/ttyACM0', 115200, timeout=1)
+        await asyncio.sleep(2)
+        print("[SERIAL] Conectado exitosamente al Arduino en /dev/ttyACM0")
+        
+        while True:
+            if puerto.in_waiting > 0:
+                linea = puerto.readline().decode('utf-8').strip()
+                partes = linea.split(',')
+                
+                if len(partes) == 5 and partes[0] == "REAL":
+                    temp, hum, ph, luz = map(float, partes[1:])
+                    
+                    comando_bits = evaluar_regulacion(temp, hum, ph, luz)
+                    puerto.write((comando_bits + "\n").encode())
+                    
+                    ahora = datetime.now()
+                    query = "INSERT INTO lecturas_sensores (origen, fecha_hora, temperatura, humedad, ph, luz) VALUES (%s, %s, %s, %s, %s, %s)"
+                    session.execute(query, ('INVERNADERO_REAL', ahora, temp, hum, ph, luz))
+                    
+            await asyncio.sleep(0.1)
+    except Exception as e:
+        print(f"[SERIAL] Advertencia: Dispositivo físico no detectado o error de lectura: {e}")
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(escuchar_arduino())
+
+# --- ENDPOINT WEBSOCKET: CANAL EN TIEMPO REAL PARA ANDROID ---
+@app.websocket("/ws/invernadero")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            payload = json.loads(data)
+            
+            temp = float(payload["temp"])
+            hum = float(payload["hum"])
+            ph = float(payload["ph"])
+            luz = float(payload["luz"])
+            
+            ahora = datetime.now()
+            query = "INSERT INTO lecturas_sensores (origen, fecha_hora, temperatura, humedad, ph, luz) VALUES (%s, %s, %s, %s, %s, %s)"
+            session.execute(query, ('SIMULADOR_ANDROID', ahora, temp, hum, ph, luz))
+            
+            comando_bits = evaluar_regulacion(temp, hum, ph, luz)
+            respuesta_json = cmd_to_json(comando_bits)
+            
+            await manager.send_personal_message(json.dumps(respuesta_json), websocket)
+            
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+
+--------------------------------------------------------------------------------
+4. PASO 3: CÓDIGO PARA ARDUINO (Convertido en Actuador/Sensor Puro)
+--------------------------------------------------------------------------------
+Subir este sketch desde la IDE de Arduino a tu hardware físico.
+
+#include <Wire.h> 
+#include <LiquidCrystal_I2C.h>
+
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+const int redTemp = 2;   const int greenTemp = 3;   const int blueTemp = 4;
+const int redHum = 5;    const int greenHum = 6;    const int blueHum = 7;
+const int redPH = 8;     const int greenPH = 9;     const int bluePH = 10;
+const int redLuz = 11;   const int greenLuz = 12;   const int blueLuz = 13;
+
+void setup() {
+  Serial.begin(115200);
+  
+  lcd.init();
+  lcd.backlight();
+  
+  for (int i = 2; i <= 13; i++) { 
+    pinMode(i, OUTPUT); 
+    digitalWrite(i, LOW); 
+  }
+  
+  lcd.setCursor(0, 0); lcd.print("HIDROPONIA_PRO");
+  lcd.setCursor(0, 1); lcd.print("CONNECTING TO PY");
+  delay(1500);
+  lcd.clear();
+}
+
+void loop() {
+  int rawTemp = analogRead(A0); 
+  int rawHum  = analogRead(A1);
+  int rawPH   = analogRead(A2); 
+  int rawLuz  = analogRead(A3);
+
+  float temp = rawTemp * (50.0 / 1023.0);
+  float hum  = rawHum * (100.0 / 1023.0);
+  float ph   = rawPH * (14.0 / 1023.0);
+  float luz  = rawLuz * (100.0 / 1023.0);
+
+  Serial.print("REAL,");
+  Serial.print(temp, 1); Serial.print(",");
+  Serial.print(hum, 1);  Serial.print(",");
+  Serial.print(ph, 1);   Serial.print(",");
+  Serial.println(luz, 1);
+
+  if (Serial.available() >= 12) {
+    String comando = Serial.readStringUntil('\n');
+    if (comando.length() >= 12) {
+      for (int i = 0; i < 12; i++) {
+        int estado = (comando.charAt(i) == '1') ? HIGH : LOW;
+        digitalWrite(i + 2, estado); 
+      }
+    }
+  }
+
+  lcd.setCursor(0, 0);
+  lcd.print("T:"); lcd.print((int)temp); lcd.print("C ");
+  lcd.print("H:"); lcd.print((int)hum);  lcd.print("% ");
+  
+  lcd.setCursor(0, 1);
+  lcd.print("PH:"); lcd.print(ph, 1);
+  lcd.print(" L:"); lcd.print((int)luz); lcd.print("% ");
+
+  delay(500); 
+}
+
+--------------------------------------------------------------------------------
+5. PASO 4: INTERFAZ MÓVIL (Android Kotlin - Conceptos de Integración)
+--------------------------------------------------------------------------------
+Estructura de payload de ida y vuelta para diseñar la lógica en Android Studio.
+
+A. Estructura JSON de Transmisión (Android envía al mover un SeekBar):
+{
+  "temp": 24.5,
+  "hum": 55.0,
+  "ph": 6.2,
+  "luz": 60.0
+}
+
+B. Estructura JSON de Recepción (Android procesa e ilumina las vistas circulares):
+{
+  "actuador_temp": "VERDE",
+  "actuador_hum": "VERDE",
+  "actuador_ph": "AZUL",
+  "actuador_luz": "ROJO"
+}
+
+Para la conexión de red en Android, se requiere añadir la siguiente dependencia 
+en el archivo build.gradle y usar la clase WebSocketListener:
+implementation("com.squareup.okhttp3:okhttp:4.12.0")
+================================================================================
