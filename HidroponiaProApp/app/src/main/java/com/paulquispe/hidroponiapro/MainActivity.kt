@@ -1,8 +1,12 @@
 package com.paulquispe.hidroponiapro
 
+import android.content.res.ColorStateList
+import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.View
+import android.widget.Button
 import android.widget.SeekBar
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -26,33 +30,54 @@ class MainActivity : AppCompatActivity() {
     private lateinit var txtLabelLuz: TextView
     private lateinit var txtEstadoConexion: TextView
 
+    // Componentes del Panel SCADA
+    private lateinit var ledTemperatura: View
+    private lateinit var ledHumedad: View
+    private lateinit var ledPH: View
+    private lateinit var ledLuz: View
+
+    private lateinit var txtActuadorTemperatura: TextView
+    private lateinit var txtActuadorHumedad: TextView
+    private lateinit var txtActuadorPH: TextView
+    private lateinit var txtActuadorLuz: TextView
+
+    // Las SeekBars ahora actúan como pantallas analógicas (lectura pura)
     private lateinit var seekTemperatura: SeekBar
     private lateinit var seekHumedad: SeekBar
     private lateinit var seekPH: SeekBar
     private lateinit var seekLuz: SeekBar
 
+    // NUEVO MOTOR DE ESTADOS: Almacenan la directiva del backend para simular la inercia
+    private var estadoActTemp = "VERDE"
+    private var estadoActHum = "VERDE"
+    private var estadoActPh = "VERDE"
+    private var estadoActLuz = "VERDE"
+
     // Clientes de Infraestructura de Red
     private lateinit var client: OkHttpClient
     private var webSocket: WebSocket? = null
 
-    // Manejador de hilos para el ciclo repetitivo de transmisión
-    private val handler = Handler(Looper.getMainLooper())
-    private val intervaloTransmision = 3000L // 3 segundos
+    // Manejadores de hilos independientes (Evitan congelamiento de UI)
+    private val handlerTransmision = Handler(Looper.getMainLooper())
+    private val handlerInerciaFisica = Handler(Looper.getMainLooper())
+
+    private val intervaloTransmision = 3000L // Transmisión regular a Cassandra cada 3s
+    private val intervaloFisica = 1000L       // Reacción de actuadores cada 1s (Lento y visible)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
         inicializarVistas()
-        configurarListenersSeekBars()
+        bloquearSeekBars()         // Volvemos las barras de lectura pura
+        configurarBotonesPerturbacion() // Los botones inyectan anomalías del entorno
 
-        // Inicializar el cliente HTTP optimizado para soportar WebSockets asíncronos
         client = OkHttpClient.Builder()
             .readTimeout(3, TimeUnit.SECONDS)
             .build()
 
-        // Iniciar la negociación del apretón de manos (Handshake) con FastAPI
         conectarAlServidorEspejo()
+        iniciarLoopFisicaEntorno() // Arranca el motor de lazo cerrado
     }
 
     private fun inicializarVistas() {
@@ -64,63 +89,127 @@ class MainActivity : AppCompatActivity() {
         txtLabelLuz = findViewById(R.id.txtLabelLuz)
         txtEstadoConexion = findViewById(R.id.txtEstadoConexion)
 
+        ledTemperatura = findViewById(R.id.ledTemperatura)
+        ledHumedad = findViewById(R.id.ledHumedad)
+        ledPH = findViewById(R.id.ledPH)
+        ledLuz = findViewById(R.id.ledLuz)
+
+        txtActuadorTemperatura = findViewById(R.id.txtActuadorTemperatura)
+        txtActuadorHumedad = findViewById(R.id.txtActuadorHumedad)
+        txtActuadorPH = findViewById(R.id.txtActuadorPH)
+        txtActuadorLuz = findViewById(R.id.txtActuadorLuz)
+
         seekTemperatura = findViewById(R.id.seekTemperatura)
         seekHumedad = findViewById(R.id.seekHumedad)
         seekPH = findViewById(R.id.seekPH)
         seekLuz = findViewById(R.id.seekLuz)
     }
 
-    private fun configurarListenersSeekBars() {
-        seekTemperatura.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                txtLabelTemperatura.text = "Temperatura: ${progress}.0 °C"
-                if (fromUser) enviarDatosInstantaneos()
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-        })
-
-        seekHumedad.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                txtLabelHumedad.text = "Humedad Ambiental: $progress %"
-                if (fromUser) enviarDatosInstantaneos()
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-        })
-
-        seekPH.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                // CORREGIDO: Convertimos la escala entera (0-140) a decimal real (0.0 - 14.0)
-                val phReal = progress / 10.0f
-                txtLabelPH.text = "Nivel de pH: $phReal"
-                if (fromUser) enviarDatosInstantaneos()
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-        })
-
-        seekLuz.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                txtLabelLuz.text = "Luminosidad: $progress Lux"
-                if (fromUser) enviarDatosInstantaneos()
-            }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
-        })
+    /**
+     * BUENA PRÁCTICA: El usuario ya no puede arrastrar las barras con el dedo.
+     * Ahora se comportan como displays industriales analógicos.
+     */
+    private fun bloquearSeekBars() {
+        seekTemperatura.setEnabled(false)
+        seekHumedad.setEnabled(false)
+        seekPH.setEnabled(false)
+        seekLuz.setEnabled(false)
     }
 
     /**
-     * Establece el puente de comunicación persistente mediante WebSockets
+     * EXCELENCIA OPERACIONAL: Los botones simulan perturbaciones externas
+     * provocadas en el ecosistema hidropónico.
      */
+    private fun configurarBotonesPerturbacion() {
+        findViewById<Button>(R.id.btnTempMas).setOnClickListener { perturbarSensor(seekTemperatura, 2, true) }
+        findViewById<Button>(R.id.btnTempMenos).setOnClickListener { perturbarSensor(seekTemperatura, 2, false) }
+
+        findViewById<Button>(R.id.btnHumMas).setOnClickListener { perturbarSensor(seekHumedad, 5, true) }
+        findViewById<Button>(R.id.btnHumMenos).setOnClickListener { perturbarSensor(seekHumedad, 5, false) }
+
+        findViewById<Button>(R.id.btnPhMas).setOnClickListener { perturbarSensor(seekPH, 3, true) }
+        findViewById<Button>(R.id.btnPhMenos).setOnClickListener { perturbarSensor(seekPH, 3, false) }
+
+        findViewById<Button>(R.id.btnLuzMas).setOnClickListener { perturbarSensor(seekLuz, 20, true) }
+        findViewById<Button>(R.id.btnLuzMenos).setOnClickListener { perturbarSensor(seekLuz, 20, false) }
+    }
+
+    private fun perturbarSensor(seekBar: SeekBar, delta: Int, incrementar: Boolean) {
+        val actual = seekBar.progress
+        val nuevo = if (incrementar) actual + delta else actual - delta
+        seekBar.progress = nuevo.coerceIn(0, seekBar.max)
+        actualizarDisplaysGraficos()
+        enviarDatosInstantaneos() // Notifica de inmediato al backend el cambio brusco
+    }
+
+    private fun actualizarDisplaysGraficos() {
+        txtLabelTemperatura.text = "Temperatura: ${seekTemperatura.progress}.0 °C"
+        txtLabelHumedad.text = "Humedad Ambiental: ${seekHumedad.progress} %"
+        txtLabelPH.text = "Nivel de pH: ${seekPH.progress / 10.0f}"
+        txtLabelLuz.text = "Luminosidad: ${seekLuz.progress} Lux"
+    }
+
+    /**
+     * MOTOR DE INERCIA DE HARDWARE (LAZO CERRADO):
+     * Simula el retardo físico real. Si el backend ordena mitigar (ROJO o AZUL),
+     * este bucle altera los valores de las barras segundo a segundo hacia el equilibrio.
+     */
+    private fun iniciarLoopFisicaEntorno() {
+        handlerInerciaFisica.post(object : Runnable {
+            override fun run() {
+                var cambiosDetectados = false
+
+                // 1. Simulación Física de Termorregulación (Extractor / Calentador)
+                if (estadoActTemp == "ROJO" && seekTemperatura.progress > 0) {
+                    seekTemperatura.progress -= 1 // Extractor enfriando paulatinamente
+                    cambiosDetectados = true
+                } else if (estadoActTemp == "AZUL" && seekTemperatura.progress < seekTemperatura.max) {
+                    seekTemperatura.progress += 1 // Calentador elevando la temperatura
+                    cambiosDetectados = true
+                }
+
+                // 2. Simulación Física de Humedad (Nebulizador / Extractores)
+                if (estadoActHum == "ROJO" && seekHumedad.progress > 0) {
+                    seekHumedad.progress -= 1 // Flujo de aire secando el ambiente
+                    cambiosDetectados = true
+                } else if (estadoActHum == "AZUL" && seekHumedad.progress < seekHumedad.max) {
+                    seekHumedad.progress += 1 // Nebulización inyectando microgotas
+                    cambiosDetectados = true
+                }
+
+                // 3. Simulación de Reacción Química en Solución Nutritiva (pH)
+                if (estadoActPh == "ROJO" && seekPH.progress > 0) {
+                    seekPH.progress -= 1 // Dosificador añadiendo ácido nítrico/fosfórico lentamente
+                    cambiosDetectados = true
+                } else if (estadoActPh == "AZUL" && seekPH.progress < seekPH.max) {
+                    seekPH.progress += 1 // Dosificador añadiendo solución básica
+                    cambiosDetectados = true
+                }
+
+                // 4. Simulación Física de Luminosidad (Foto-periodo)
+                if (estadoActLuz == "ROJO" && seekLuz.progress > 0) {
+                    seekLuz.progress -= 5 // Despliegue motorizado de mallas de sombreo
+                    cambiosDetectados = true
+                } else if (estadoActLuz == "AZUL" && seekLuz.progress < seekLuz.max) {
+                    seekLuz.progress += 5 // Encendido gradual de paneles LED de espectro completo
+                    cambiosDetectados = true
+                }
+
+                if (cambiosDetectados) {
+                    actualizarDisplaysGraficos()
+                }
+
+                handlerInerciaFisica.postDelayed(this, intervaloFisica)
+            }
+        })
+    }
+
     private fun conectarAlServidorEspejo() {
         val request = Request.Builder().url(urlWebSocket).build()
 
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 runOnUiThread {
-                    txtNombreVerdura.text = "🌱 Monitoreo Activo: Configuración Remota"
-                    txtRangosOptimos.text = "Clúster Cassandra Conectado vía FastAPI"
                     txtEstadoConexion.text = "✅ Canal WebSocket Abierto"
                 }
                 iniciarLoopTransmision()
@@ -130,15 +219,30 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     try {
                         val respuestaJson = JSONObject(text)
-                        val actTemp = respuestaJson.getString("actuador_temp")
-                        val actHum = respuestaJson.getString("actuador_hum")
-                        val actPh = respuestaJson.getString("actuador_ph")
-                        val actLuz = respuestaJson.getString("actuador_luz")
 
-                        txtEstadoConexion.text = "📥 Respuesta Actuadores Cassandra:\n" +
-                                "TEMP: $actTemp | HUM: $actHum | pH: $actPh | LUZ: $actLuz"
+                        // Sincronización del Diccionario de Datos del cultivo desde Cassandra
+                        if (respuestaJson.has("txt_verdura")) {
+                            txtNombreVerdura.text = respuestaJson.getString("txt_verdura")
+                        }
+                        if (respuestaJson.has("txt_rangos")) {
+                            txtRangosOptimos.text = respuestaJson.getString("txt_rangos")
+                        }
+
+                        // Sincronización de variables de estado global para el motor de inercia
+                        estadoActTemp = respuestaJson.getString("actuador_temp")
+                        estadoActHum = respuestaJson.getString("actuador_hum")
+                        estadoActPh = respuestaJson.getString("actuador_ph")
+                        estadoActLuz = respuestaJson.getString("actuador_luz")
+
+                        // Pintado en caliente de la Interfaz SCADA
+                        actualizarLedSCADA(ledTemperatura, txtActuadorTemperatura, "Extractor / Calefactor", estadoActTemp)
+                        actualizarLedSCADA(ledHumedad, txtActuadorHumedad, "Bomba / Nebulizador", estadoActHum)
+                        actualizarLedSCADA(ledPH, txtActuadorPH, "Dosificador de Solución", estadoActPh)
+                        actualizarLedSCADA(ledLuz, txtActuadorLuz, "Iluminación Artificial", estadoActLuz)
+
+                        txtEstadoConexion.text = "📥 Tablero SCADA Sincronizado en Tiempo Real"
                     } catch (e: Exception) {
-                        txtEstadoConexion.text = "❌ Error al decodificar respuesta del clúster: ${e.localizedMessage}"
+                        txtEstadoConexion.text = "❌ Error de sincronización: ${e.localizedMessage}"
                     }
                 }
             }
@@ -149,54 +253,72 @@ class MainActivity : AppCompatActivity() {
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 runOnUiThread {
-                    val detalleError = t.localizedMessage ?: "Error de Handshake / Timeout de red"
-                    txtEstadoConexion.text = "❌ Falla de Red: $detalleError\nURL: $urlWebSocket"
+                    val detalleError = t.localizedMessage ?: "Timeout / Caída de red"
+                    txtEstadoConexion.text = "❌ Falla de Red: $detalleError"
                 }
             }
         })
     }
 
-    /**
-     * Ciclo automatizado que inyecta datos puros de sensores al túnel WebSocket abierto
-     */
-    private fun iniciarLoopTransmision() {
-        // Removemos callbacks previos para evitar duplicación del loop si hay reconexiones
-        handler.removeCallbacksAndMessages(null)
+    private fun actualizarLedSCADA(viewLed: View, textViewInfo: TextView, nombreDispositivo: String, estado: String) {
+        val colorHex: String
+        val mensajeEstado: String
 
-        handler.post(object : Runnable {
+        when (estado) {
+            "VERDE" -> {
+                colorHex = "#10B981" // Verde Esmeralda
+                mensajeEstado = "APAGADO / RANGO ÓPTIMO"
+            }
+            "ROJO" -> {
+                colorHex = "#EF4444" // Rojo Intenso
+                mensajeEstado = "ACTIVO (ESTABILIZANDO EXCESO ↓)"
+            }
+            "AZUL" -> {
+                colorHex = "#3B82F6" // Azul Eléctrico
+                mensajeEstado = "ACTIVO (ESTABILIZANDO DÉFICIT ↑)"
+            }
+            else -> {
+                colorHex = "#64748B"
+                mensajeEstado = "DESCONECTADO"
+            }
+        }
+
+        viewLed.backgroundTintList = ColorStateList.valueOf(Color.parseColor(colorHex))
+        textViewInfo.text = "$nombreDispositivo: $mensajeEstado"
+        textViewInfo.setTextColor(Color.parseColor(colorHex))
+    }
+
+    private fun iniciarLoopTransmision() {
+        handlerTransmision.removeCallbacksAndMessages(null)
+        handlerTransmision.post(object : Runnable {
             override fun run() {
                 enviarDatosInstantaneos()
-                handler.postDelayed(this, intervaloTransmision)
+                handlerTransmision.postDelayed(this, intervaloTransmision)
             }
         })
     }
 
-    /**
-     * Inyecta de inmediato un JSON con el estado de las barras al flujo de red.
-     */
     private fun enviarDatosInstantaneos() {
-        // Evitamos calcular si el objeto o la conexión no se han inicializado
         if (webSocket == null) return
-
         try {
             val jsonPayload = JSONObject().apply {
                 put("temp", seekTemperatura.progress.toDouble())
                 put("hum", seekHumedad.progress.toDouble())
-                // CORREGIDO: Escalamos el pH antes de despacharlo a Cassandra
                 put("ph", (seekPH.progress.toDouble() / 10.0))
                 put("luz", seekLuz.progress.toDouble())
             }
             webSocket?.send(jsonPayload.toString())
         } catch (e: Exception) {
             runOnUiThread {
-                txtEstadoConexion.text = "⚠️ Error de envío instantáneo: ${e.localizedMessage}"
+                txtEstadoConexion.text = "⚠️ Error de envío: ${e.localizedMessage}"
             }
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        webSocket?.close(1000, "Activity destruida de manera limpia")
-        handler.removeCallbacksAndMessages(null)
+        webSocket?.close(1000, "Cierre limpio de recursos")
+        handlerTransmision.removeCallbacksAndMessages(null)
+        handlerInerciaFisica.removeCallbacksAndMessages(null)
     }
 }

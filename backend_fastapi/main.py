@@ -134,25 +134,44 @@ async def startup_event():
 
 # --- ENDPOINT WEBSOCKET EXCELENCIA OPERACIONAL ---
 # --- ENDPOINT WEBSOCKET BLINDADO CONTRA LOOP INFINITO ---
+# --- FUNCIÓN AUXILIAR SÍNCRONA PARA CONSULTAR CASSANDRA EN ARRANQUE ---
+def obtener_datos_bienvenida_sync():
+    try:
+        query = "SELECT id_cultivo, temp_min, temp_max FROM config_cultivos WHERE id_cultivo = %s"
+        config = session.execute(query, ('lechuga_01',)).one()
+        if config:
+            return {
+                "cultivo": f"🌱 Monitoreo Activo: {config.id_cultivo.upper()}",
+                "rangos": f"Rangos Óptimos Temp: {config.temp_min}°C - {config.temp_max}°C (Cassandra)"
+            }
+    except Exception:
+        pass
+    return {
+        "cultivo": "🌱 Monitoreo Activo: LECHUGA (Por Defecto)",
+        "rangos": "Rangos Estándar Sincronizados con el Diccionario de Datos"
+    }
+
+# --- ENDPOINT WEBSOCKET EXCELENCIA OPERACIONAL CONTRA LOOP INFINITO ---
 @app.websocket("/ws/invernadero")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     print("\n🟢 [WEBSOCKET] Canal abierto. Esperando telemetría...")
     
     try:
-        # Enviar datos de bienvenida al conectar
-        #info_cultivo = await asyncio.to_thread(obtener_datos_bienvenida_sync)
-        #init_payload = {
-        #    "actuador_temp": info_cultivo["cultivo"],
-        #    "actuador_hum": info_cultivo["rangos"],
-        #    "actuador_ph": "VERDE",
-        #    "actuador_luz": "VERDE"
-        #}
-        #await websocket.send_text(json.dumps(init_payload))
+        # BUENA PRÁCTICA: Enviamos el estado inicial del cultivo al conectar para actualizar la tarjeta azul de Android
+        info_cultivo = await asyncio.to_thread(obtener_datos_bienvenida_sync)
+        init_payload = {
+            "txt_verdura": info_cultivo["cultivo"],
+            "txt_rangos": info_cultivo["rangos"],
+            "actuador_temp": "VERDE",
+            "actuador_hum": "VERDE",
+            "actuador_ph": "VERDE",
+            "actuador_luz": "VERDE"
+        }
+        await websocket.send_text(json.dumps(init_payload))
 
         while True:
             try:
-                # Recepción de datos del celular
                 data = await websocket.receive_text()
                 payload = json.loads(data)
                 
@@ -163,7 +182,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 print(f"📥 [TELEMETRÍA] Android -> Temp: {temp}°C | Hum: {hum}% | pH: {ph} | Luz: {luz}%")
                 
-                # Inserciones aisladas en hilos independientes
                 ahora = datetime.now()
                 query = "INSERT INTO lecturas_sensores (origen, fecha_hora, temperatura, humedad, ph, luz) VALUES (%s, %s, %s, %s, %s, %s)"
                 await asyncio.to_thread(session.execute, query, ('SIMULADOR_ANDROID', ahora, temp, hum, ph, luz))
@@ -174,22 +192,15 @@ async def websocket_endpoint(websocket: WebSocket):
                 await manager.send_personal_message(json.dumps(respuesta_json), websocket)
                 
             except (WebSocketDisconnect, ConnectionResetError):
-                # CRÍTICO: Si el celular se apaga o se sale de la app, salimos del bucle inmediatamente
                 print("🔌 [WEBSOCKET] Conexión cerrada por el cliente de forma abrupta. Liberando recursos.")
                 break
-                
             except KeyError as e:
                 print(f"⚠️ [MALEABILIDAD] Estructura JSON inválida: {e}")
-                # No rompemos el bucle por un JSON mal formado, solo ignoramos el paquete
-                
             except Exception as e:
                 print(f"❌ [ERROR CONTROLADO] Detalle: {str(e)}")
-                # Si es un error grave de red interna, rompemos para evitar el bucle loco
                 if "NoneType" in str(e) or "WebSocket" in str(e):
                     break
-                
     finally:
-        # Esto se ejecuta SIEMPRE que se salga del while True, asegurando la limpieza
         manager.disconnect(websocket)
         print("🧹 [INFRAESTRUCTURA] Memoria del socket limpiada exitosamente.")
 
