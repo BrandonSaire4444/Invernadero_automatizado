@@ -1,6 +1,7 @@
 import asyncio
 import json
 import serial
+import os
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
@@ -28,20 +29,20 @@ class ConnectionManager:
         self.active_connections.append(websocket)
 
     def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
 
     async def send_personal_message(self, message: str, websocket: WebSocket):
         await websocket.send_text(message)
 
 manager = ConnectionManager()
 
-# --- LÓGICA DE REGULACIÓN DINÁMICA CONSULTANDO CASSANDRA ---
-def evaluar_regulacion(temp, hum, ph, luz):
-    # Consulta los límites operativos cargados en la base de datos para la lechuga
+# --- LÓGICA DE REGULACIÓN (TRADUCIDA A HILO NO BLOQUEANTE) ---
+def evaluar_regulacion_sync(temp, hum, ph, luz):
+    """Ejecuta de forma aislada las consultas pesadas de Cassandra para no trabar Asyncio"""
     query = "SELECT temp_min, temp_max, hum_min, hum_max, ph_min, ph_max, luz_min, luz_max FROM config_cultivos WHERE id_cultivo = %s"
     config = session.execute(query, ('lechuga_01',)).one()
     
-    # Parámetros por seguridad si no existiera registro
     if not config:
         t_min, t_max, h_min, h_max, p_min, p_max, l_min, l_max = 18.0, 26.0, 40.0, 70.0, 5.5, 6.5, 40.0, 80.0
     else:
@@ -51,18 +52,15 @@ def evaluar_regulacion(temp, hum, ph, luz):
         l_min, l_max = config.luz_min, config.luz_max
 
     cmd = ""
-    # Temperatura -> Azul (Bajo), Rojo (Alto), Verde (Óptimo)
     cmd += "001" if temp < t_min else ("100" if temp > t_max else "010")
-    # Humedad
     cmd += "001" if hum < h_min else ("100" if hum > h_max else "010")
-    # pH
     cmd += "001" if ph < p_min else ("100" if ph > p_max else "010")
-    # Luz
     cmd += "001" if luz < l_min else ("100" if luz > l_max else "010")
     
-    # Persistir los estados calculados en la tabla de actuadores
     ahora = datetime.now()
     u_query = "INSERT INTO estado_actuadores (componente, estado, ultima_actualizacion) VALUES (%s, %s, %s)"
+    
+    # Batch de inserción rápida de estados
     session.execute(u_query, ('actuador_temp', 'AZUL' if temp < t_min else ('ROJO' if temp > t_max else 'VERDE'), ahora))
     session.execute(u_query, ('actuador_hum', 'AZUL' if hum < h_min else ('ROJO' if hum > h_max else 'VERDE'), ahora))
     session.execute(u_query, ('actuador_ph', 'AZUL' if ph < p_min else ('ROJO' if ph > p_max else 'VERDE'), ahora))
@@ -82,7 +80,7 @@ def cmd_to_json(cmd):
         "actuador_luz": mapear(cmd[9:12])
     }
 
-# --- ENDPOINT DE AUTENTICACIÓN (LOGIN REAL CON CASSANDRA) ---
+# --- ENDPOINT DE AUTENTICACIÓN ---
 @app.post("/api/login", response_model=Token)
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     query = "SELECT password_hash FROM usuarios WHERE username = %s"
@@ -93,81 +91,108 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     
     raise HTTPException(status_code=400, detail="Usuario o contraseña incorrectos")
 
-# --- HILO ASÍNCRONO: LECTURA DEL ARDUINO FÍSICO (SERIAL USB) ---
+# --- HILO ASÍNCRONO: ARDUINO SERIAL ---
 async def escuchar_arduino():
     try:
-        # Inicialización estricta del bus Serial
+        if not os.path.exists('/dev/ttyACM0'):
+            print("[SERIAL] Alerta: /dev/ttyACM0 no detectado. Modo simulación activo.")
+            return
+
         puerto = serial.Serial('/dev/ttyACM0', 115200, timeout=1)
-        
-        # CORRECCIÓN 1: Forzar reinicio DTR/RTS para despertar la transmisión de datos del hardware
         puerto.setDTR(False)
         await asyncio.sleep(1)
         puerto.flushInput()
         puerto.setDTR(True)
-        
-        await asyncio.sleep(2)  # Retardo de estabilización
+        await asyncio.sleep(2)
         print("[SERIAL] Conectado exitosamente al Arduino en /dev/ttyACM0")
         
         while True:
             if puerto.in_waiting > 0:
                 linea = puerto.readline().decode('utf-8', errors='ignore').strip()
-                
-                # Depuración en tiempo real en consola
-                print(f"[DEBUG SERIAL] Procesando buffer: {linea}")
-                
                 partes = linea.split(',')
                 if len(partes) == 5 and partes[0] == "REAL":
-                    # CORRECCIÓN 2: Mapeo explícito a float nativo compatible con controladores CQL
                     temp = float(partes[1])
                     hum  = float(partes[2])
                     ph   = float(partes[3])
                     luz  = float(partes[4])
                     
-                    comando_bits = evaluar_regulacion(temp, hum, ph, luz)
-                    
-                    # Escritura directa de vuelta hacia el hardware
+                    # Ejecutar la lógica síncrona de base de datos en un hilo seguro
+                    comando_bits = await asyncio.to_thread(evaluar_regulacion_sync, temp, hum, ph, luz)
                     puerto.write((comando_bits + "\n").encode())
                     
-                    # Persistencia de Telemetría histórica
                     ahora = datetime.now()
                     query = "INSERT INTO lecturas_sensores (origen, fecha_hora, temperatura, humedad, ph, luz) VALUES (%s, %s, %s, %s, %s, %s)"
-                    session.execute(query, ('INVERNADERO_REAL', ahora, temp, hum, ph, luz))
+                    await asyncio.to_thread(session.execute, query, ('INVERNADERO_REAL', ahora, temp, hum, ph, luz))
                     
             await asyncio.sleep(0.1)
     except Exception as e:
-        print(f"[SERIAL] Error crítico en el subproceso del hardware: {e}")
+        print(f"[SERIAL] Error crítico en hardware: {e}")
 
 @app.on_event("startup")
 async def startup_event():
     asyncio.create_task(escuchar_arduino())
 
-# --- ENDPOINT WEBSOCKET: CANAL EN TIEMPO REAL PARA ANDROID ---
+# --- ENDPOINT WEBSOCKET EXCELENCIA OPERACIONAL ---
+# --- ENDPOINT WEBSOCKET BLINDADO CONTRA LOOP INFINITO ---
 @app.websocket("/ws/invernadero")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
+    print("\n🟢 [WEBSOCKET] Canal abierto. Esperando telemetría...")
+    
     try:
-        while True:
-            data = await websocket.receive_text()
-            payload = json.loads(data)
-            
-            temp = float(payload["temp"])
-            hum = float(payload["hum"])
-            ph = float(payload["ph"])
-            luz = float(payload["luz"])
-            
-            ahora = datetime.now()
-            query = "INSERT INTO lecturas_sensores (origen, fecha_hora, temperatura, humedad, ph, luz) VALUES (%s, %s, %s, %s, %s, %s)"
-            session.execute(query, ('SIMULADOR_ANDROID', ahora, temp, hum, ph, luz))
-            
-            comando_bits = evaluar_regulacion(temp, hum, ph, luz)
-            respuesta_json = cmd_to_json(comando_bits)
-            
-            await manager.send_personal_message(json.dumps(respuesta_json), websocket)
-            
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
+        # Enviar datos de bienvenida al conectar
+        #info_cultivo = await asyncio.to_thread(obtener_datos_bienvenida_sync)
+        #init_payload = {
+        #    "actuador_temp": info_cultivo["cultivo"],
+        #    "actuador_hum": info_cultivo["rangos"],
+        #    "actuador_ph": "VERDE",
+        #    "actuador_luz": "VERDE"
+        #}
+        #await websocket.send_text(json.dumps(init_payload))
 
-# --- ENDPOINT DE PRUEBA GENERAL ---
+        while True:
+            try:
+                # Recepción de datos del celular
+                data = await websocket.receive_text()
+                payload = json.loads(data)
+                
+                temp = float(payload["temp"])
+                hum = float(payload["hum"])
+                ph = float(payload["ph"])
+                luz = float(payload["luz"])
+                
+                print(f"📥 [TELEMETRÍA] Android -> Temp: {temp}°C | Hum: {hum}% | pH: {ph} | Luz: {luz}%")
+                
+                # Inserciones aisladas en hilos independientes
+                ahora = datetime.now()
+                query = "INSERT INTO lecturas_sensores (origen, fecha_hora, temperatura, humedad, ph, luz) VALUES (%s, %s, %s, %s, %s, %s)"
+                await asyncio.to_thread(session.execute, query, ('SIMULADOR_ANDROID', ahora, temp, hum, ph, luz))
+                
+                comando_bits = await asyncio.to_thread(evaluar_regulacion_sync, temp, hum, ph, luz)
+                respuesta_json = cmd_to_json(comando_bits)
+                
+                await manager.send_personal_message(json.dumps(respuesta_json), websocket)
+                
+            except (WebSocketDisconnect, ConnectionResetError):
+                # CRÍTICO: Si el celular se apaga o se sale de la app, salimos del bucle inmediatamente
+                print("🔌 [WEBSOCKET] Conexión cerrada por el cliente de forma abrupta. Liberando recursos.")
+                break
+                
+            except KeyError as e:
+                print(f"⚠️ [MALEABILIDAD] Estructura JSON inválida: {e}")
+                # No rompemos el bucle por un JSON mal formado, solo ignoramos el paquete
+                
+            except Exception as e:
+                print(f"❌ [ERROR CONTROLADO] Detalle: {str(e)}")
+                # Si es un error grave de red interna, rompemos para evitar el bucle loco
+                if "NoneType" in str(e) or "WebSocket" in str(e):
+                    break
+                
+    finally:
+        # Esto se ejecuta SIEMPRE que se salga del while True, asegurando la limpieza
+        manager.disconnect(websocket)
+        print("🧹 [INFRAESTRUCTURA] Memoria del socket limpiada exitosamente.")
+
 @app.get("/")
 def read_root():
     return {"status": "Servidor HidroponiaPro Operacional", "motor": "FastAPI"}

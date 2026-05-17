@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://tools.android.com/tools"
+    android:id="@+id/main"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#F0F4F8"
+    android:fillViewport="true"
+    tools:context=".MainActivity">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <!-- ENCABEZADO PRINCIPAL -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="HidroponiaPro v1.0"
+            android:textColor="#0F172A"
+            android:textSize="26sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:layout_marginTop="8dp"/>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Transmisión Automatizada en Tiempo Real"
+            android:textColor="#475569"
+            android:textSize="13sp"
+            android:gravity="center"
+            android:layout_marginBottom="16dp"/>
+
+        <!-- TARJETA INFORMATIVA: SINCRONIZADA CON CASSANDRA -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#E0F2FE"
+            android:padding="12dp"
+            android:layout_marginBottom="20dp">
+
+            <!-- ID asignado para cambiar el nombre de la verdura dinámicamente -->
+            <TextView
+                android:id="@+id/txtNombreVerdura"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="🌱 Cargando cultivo del servidor..."
+                android:textColor="#0369A1"
+                android:textSize="15sp"
+                android:textStyle="bold"/>
+
+            <!-- ID asignado para mostrar las directrices del Admin -->
+            <TextView
+                android:id="@+id/txtRangosOptimos"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Esperando sincronización de Diccionario de Datos..."
+                android:textColor="#0C4A6E"
+                android:textSize="12sp"
+                android:layout_marginTop="2dp"/>
+        </LinearLayout>
+
+        <!-- VARIABLE 1: TEMPERATURA -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#FFFFFF"
+            android:padding="16dp"
+            android:layout_marginBottom="14dp">
+
+            <TextView
+                android:id="@+id/txtLabelTemperatura"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Temperatura: 20.0 °C"
+                android:textColor="#1E293B"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <SeekBar
+                android:id="@+id/seekTemperatura"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:max="50"
+                android:progress="20"
+                android:progressTint="#EF4444"
+                android:thumbTint="#DC2626"/>
+        </LinearLayout>
+
+        <!-- VARIABLE 2: HUMEDAD AMBIENTAL -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#FFFFFF"
+            android:padding="16dp"
+            android:layout_marginBottom="14dp">
+
+            <TextView
+                android:id="@+id/txtLabelHumedad"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Humedad Ambiental: 60 %"
+                android:textColor="#1E293B"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <SeekBar
+                android:id="@+id/seekHumedad"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:max="100"
+                android:progress="60"
+                android:progressTint="#3B82F6"
+                android:thumbTint="#2563EB"/>
+        </LinearLayout>
+
+        <!-- VARIABLE 3: PH DEL AGUA -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#FFFFFF"
+            android:padding="16dp"
+            android:layout_marginBottom="14dp">
+
+            <TextView
+                android:id="@+id/txtLabelPH"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Nivel de pH: 6.0"
+                android:textColor="#1E293B"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <SeekBar
+                android:id="@+id/seekPH"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:max="14"
+                android:progress="6"
+                android:progressTint="#8B5CF6"
+                android:thumbTint="#7C3AED"/>
+        </LinearLayout>
+
+        <!-- VARIABLE 4: LUMINOSIDAD -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#FFFFFF"
+            android:padding="16dp"
+            android:layout_marginBottom="20dp">
+
+            <TextView
+                android:id="@+id/txtLabelLuz"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Luminosidad: 400 Lux"
+                android:textColor="#1E293B"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <SeekBar
+                android:id="@+id/seekLuz"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:max="1000"
+                android:progress="400"
+                android:progressTint="#F59E0B"
+                android:thumbTint="#D97706"/>
+        </LinearLayout>
+
+        <!-- INDICADOR ESTADO DE TRANSMISIÓN -->
+        <TextView
+            android:id="@+id/txtEstadoConexion"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🔄 Conectando al servicio local..."
+            android:textColor="#059669"
+            android:textSize="13sp"
+            android:textStyle="italic"
+            android:gravity="center"
+            android:layout_marginBottom="12dp"/>
+
+    </LinearLayout>
+</ScrollView>
