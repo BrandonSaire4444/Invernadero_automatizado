@@ -12,7 +12,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
-import okhttp3.MediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
@@ -24,9 +23,8 @@ class LoginActivity : AppCompatActivity() {
 
     private val client = OkHttpClient()
 
-    // ⚙️ Al usar teléfono físico por cable USB + 'adb reverse',
-    // el dispositivo mapea el puerto directo al localhost de tu Linux Mint.
-    private val BASE_URL = "http://127.0.0.1:8000"
+    // Usando IP de red local para comunicación transparente física/emulador
+    private val BASE_URL = "http://192.168.2.108:8000"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -35,9 +33,8 @@ class LoginActivity : AppCompatActivity() {
         val txtUsername = findViewById<EditText>(R.id.txt_username)
         val txtPassword = findViewById<EditText>(R.id.txt_password)
         val btnIngresar = findViewById<Button>(R.id.btn_ingresar)
-        val btnIrRegistrar = findViewById<Button>(R.id.btn_ir_registrar) // 🟢 Vinculado al nuevo botón del XML
+        val btnIrRegistrar = findViewById<Button>(R.id.btn_ir_registrar)
 
-        // 1. LÓGICA PARA INICIAR SESIÓN (AUTENTICAR)
         btnIngresar.setOnClickListener {
             val username = txtUsername.text.toString().trim()
             val password = txtPassword.text.toString().trim()
@@ -47,13 +44,11 @@ class LoginActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
-            // Ejecutamos la petición en un hilo seguro de fondo usando Corrutinas
             CoroutineScope(Dispatchers.IO).launch {
                 ejecutarLogin(username, password)
             }
         }
 
-        // 2. LÓGICA PARA REGISTRAR NUEVO USUARIO DIRECTO EN CASSANDRA
         btnIrRegistrar.setOnClickListener {
             val username = txtUsername.text.toString().trim()
             val password = txtPassword.text.toString().trim()
@@ -63,7 +58,6 @@ class LoginActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
-            // Ejecutamos el registro en segundo plano
             CoroutineScope(Dispatchers.IO).launch {
                 ejecutarRegistro(username, password)
             }
@@ -71,72 +65,76 @@ class LoginActivity : AppCompatActivity() {
     }
 
     private suspend fun ejecutarLogin(user: String, pass: String) {
-        // Construimos el cuerpo en formato Form-Data requerido por OAuth2PasswordRequestForm de FastAPI
         val formBody = FormBody.Builder()
             .add("username", user)
             .add("password", pass)
             .build()
 
-        // 🛡️ Añadimos cabeceras explísitas para blindar la comunicación
         val request = Request.Builder()
             .url("$BASE_URL/api/login")
-            .addHeader("Content-Type", "application/x-www-form-urlencoded")
             .addHeader("Accept", "application/json")
             .post(formBody)
             .build()
 
+        var loginExitoso = false
+        var accessToken: String? = null
+
         try {
+            // 📡 Procesamos la red estrictamente en segundo plano
             client.newCall(request).execute().use { response ->
                 val responseData = response.body?.string()
-
-                withContext(Dispatchers.Main) {
-                    if (response.isSuccessful && responseData != null) {
-                        // Parseamos la respuesta para obtener el Token JWT
-                        val jsonObject = JSONObject(responseData)
-                        val accessToken = jsonObject.getString("access_token")
-
-                        // Persistencia: Guardamos el token en SharedPreferences
-                        val sharedPref = getSharedPreferences("AUTH_PREFS", Context.MODE_PRIVATE)
-                        with(sharedPref.edit()) {
-                            putString("JWT_TOKEN", accessToken)
-                            putString("USERNAME", user)
-                            apply()
-                        }
-
-                        Toast.makeText(this@LoginActivity, "Autenticación Exitosa", Toast.LENGTH_SHORT).show()
-
-                        // --- PASO A LA SIGUIENTE PANTALLA ---
-                        val intent = Intent(this@LoginActivity, MainActivity::class.java)
-                        startActivity(intent)
-                        finish() // Cerramos el Login para liberar memoria
-                    } else {
-                        // Error controlado: Credenciales inválidas o rechazo del backend (Ej: 401 Unauthorized)
-                        Toast.makeText(this@LoginActivity, "Usuario o contraseña incorrectos", Toast.LENGTH_SHORT).show()
+                if (response.isSuccessful && responseData != null) {
+                    val jsonObject = JSONObject(responseData)
+                    // Mapeamos de forma flexible si viene en minúsculas o mayúsculas del API
+                    accessToken = when {
+                        jsonObject.has("access_token") -> jsonObject.getString("access_token")
+                        jsonObject.has("JWT_TOKEN") -> jsonObject.getString("JWT_TOKEN")
+                        else -> null
+                    }
+                    if (accessToken != null) {
+                        loginExitoso = true
                     }
                 }
             }
-        } catch (e: IOException) {
-            // Error físico: El cable se desconectó, el puerto no está revertido o el servidor está apagado
+
+            // 🚀 Una vez cerrada la conexión de red de forma segura, volvemos a la UI
+            withContext(Dispatchers.Main) {
+                if (loginExitoso && accessToken != null) {
+                    // Persistencia segura local
+                    val sharedPref = getSharedPreferences("AUTH_PREFS", Context.MODE_PRIVATE)
+                    sharedPref.edit().apply {
+                        putString("JWT_TOKEN", accessToken)
+                        putString("USERNAME", user)
+                        apply()
+                    }
+
+                    Toast.makeText(this@LoginActivity, "Autenticación Exitosa", Toast.LENGTH_SHORT).show()
+
+                    // Salto limpio al Tablero SCADA
+                    val intent = Intent(this@LoginActivity, MainActivity::class.java)
+                    startActivity(intent)
+                    finish()
+                } else {
+                    Toast.makeText(this@LoginActivity, "Usuario o contraseña incorrectos", Toast.LENGTH_SHORT).show()
+                }
+            }
+
+        } catch (e: Exception) {
             withContext(Dispatchers.Main) {
                 Toast.makeText(this@LoginActivity, "Error de conexión con el servidor SCADA", Toast.LENGTH_LONG).show()
             }
         }
     }
 
-    // 🟢 NUEVA FUNCIÓN: Envía un JSON nativo al endpoint público de registro en FastAPI
-    // 🟢 FUNCIÓN DE REGISTRO OPTIMIZADA CON LA NUEVA SINTAXIS DE OKHTTP
     private suspend fun ejecutarRegistro(user: String, pass: String) {
-        // Usa la función de extensión moderna de Kotlin para OkHttp3
         val jsonMediaType = "application/json; charset=utf-8".toMediaTypeOrNull()
 
-        // Estructura JSON que mapea directo al modelo Pydantic "UsuarioRegistro" de tu FastAPI
         val jsonBody = JSONObject().apply {
             put("nombre", "Paul Quispe")
             put("username", user)
             put("password", pass)
         }.toString()
 
-        // Verificamos que el MediaType no sea nulo antes de enviarlo
         val body = RequestBody.create(jsonMediaType, jsonBody)
 
         val request = Request.Builder()
@@ -146,19 +144,26 @@ class LoginActivity : AppCompatActivity() {
             .post(body)
             .build()
 
+        var registroExitoso = false
+        var mensajeError: String? = null
+
         try {
             client.newCall(request).execute().use { response ->
                 val responseData = response.body?.string()
+                if (response.isSuccessful) {
+                    registroExitoso = true
+                } else {
+                    mensajeError = responseData?.let {
+                        try { JSONObject(it).optString("detail") } catch(_: Exception) { "Error en backend" }
+                    } ?: "Error de datos"
+                }
+            }
 
-                withContext(Dispatchers.Main) {
-                    if (response.isSuccessful) {
-                        Toast.makeText(this@LoginActivity, "🌱 ¡Usuario '$user' registrado con éxito!", Toast.LENGTH_LONG).show()
-                    } else {
-                        val errorMsg = responseData?.let {
-                            try { JSONObject(it).optString("detail") } catch(_: Exception) { "Error en backend" }
-                        } ?: "Error de datos"
-                        Toast.makeText(this@LoginActivity, "⚠️ No se pudo registrar: $errorMsg", Toast.LENGTH_LONG).show()
-                    }
+            withContext(Dispatchers.Main) {
+                if (registroExitoso) {
+                    Toast.makeText(this@LoginActivity, "🌱 ¡Usuario '$user' registrado con éxito!", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(this@LoginActivity, "⚠️ No se pudo registrar: $mensajeError", Toast.LENGTH_LONG).show()
                 }
             }
         } catch (e: IOException) {

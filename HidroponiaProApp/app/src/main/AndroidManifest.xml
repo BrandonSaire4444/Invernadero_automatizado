@@ -15,22 +15,23 @@
         android:theme="@style/Theme.HidroponiaProApp"
         android:usesCleartextTraffic="true"
         tools:targetApi="31">
-
+        <activity
+            android:name=".RegistrarCultivoActivity"
+            android:exported="false"
+            android:theme="@style/Theme.AppCompat.Light.NoActionBar" />
         <!-- 1. PUERTA DE ENTRADA: El Login arranca primero -->
         <activity
             android:name=".LoginActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
+
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
-
-        <!-- 2. PANEL PRINCIPAL: Espera a que el Login lo invoque -->
+        </activity> <!-- 2. PANEL PRINCIPAL: Espera a que el Login lo invoque -->
         <activity
             android:name=".MainActivity"
             android:exported="false" />
-
     </application>
 
 </manifest>

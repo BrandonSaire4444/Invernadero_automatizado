@@ -55,6 +55,19 @@ class UsuarioLogin(BaseModel):
     username: str
     password: str
 
+# --- 🌿 MODELO ESTRUCTURADO PARA EXPANDIR EL DICCIONARIO DE DATOS ---
+class CultivoRegistro(BaseModel):
+    id_cultivo: str
+    nombre_exótico: str  # Nombre comercial o común para la interfaz
+    temp_min: float
+    temp_max: float
+    hum_min: float
+    hum_max: float
+    ph_min: float
+    ph_max: float
+    luz_min: float
+    luz_max: float
+
 # --- ADMINISTRADOR DE CONEXIONES WEBSOCKET ---
 class ConnectionManager:
     def __init__(self):
@@ -131,7 +144,7 @@ def cmd_to_json(cmd):
         "actuador_luz": mapear(cmd[9:12])
     }
 
-# --- 🆕 ENDPOINT 1: REGISTRO DE NUEVOS USUARIOS (PÚBLICO) ---
+# --- ENDPOINT 1: REGISTRO DE NUEVOS USUARIOS (PÚBLICO) ---
 @app.post("/api/usuarios/registrar", status_code=status.HTTP_201_CREATED)
 async def registrar_usuario(usuario: UsuarioRegistro):
     user_limpio = usuario.username.strip().lower()
@@ -157,7 +170,6 @@ async def login(request: Request):
     user_enviado = None
     pass_enviada = None
     
-    # 1. Extraer datos sin importar el formato de Android (JSON, Form o URL)
     try:
         payload = await request.json()
         user_enviado = payload.get("username") or payload.get("usuario") or payload.get("Username")
@@ -186,7 +198,6 @@ async def login(request: Request):
     user_limpio = str(user_enviado).strip().lower()
     pass_limpia = str(pass_enviada).strip()
     
-    # 2. Buscar usuario en Cassandra
     query = "SELECT username, nombre, password_hash FROM usuarios WHERE username = %s"
     resultado = session.execute(query, (user_limpio,)).one()
     
@@ -196,14 +207,10 @@ async def login(request: Request):
     
     hash_en_db = str(resultado.password_hash).strip().strip("'\"")
     
-    # 3. Verificación Criptográfica
     if verificar_password(pass_limpia, hash_en_db):
         print("🔓 [ÉXITO] Contraseña válida.")
         
-        # 🛠️ CONTROL DE AUDITORÍA: Corregir el nombre replicado si es necesario
-        # Si el usuario es 'monica' o 'admin' y su nombre está guardado como 'Paul Quispe', lo corregimos dinámicamente
         if user_limpio != "paul" and resultado.nombre == "Paul Quispe":
-            # Capitalizamos la primera letra para que quede estético (ej: 'Monica', 'Admin')
             nuevo_nombre = user_limpio.capitalize() 
             print(f"✍️ [CORRECCIÓN] Detectado nombre replicado. Actualizando '{user_limpio}' a nombre real: '{nuevo_nombre}'...")
             
@@ -211,10 +218,71 @@ async def login(request: Request):
             session.execute(query_update_nombre, (nuevo_nombre, user_limpio))
         
         token_acceso = crear_token_acceso(data={"sub": user_limpio})
-        return {"access_token": token_acceso, "token_type": "bearer"}
+        return {"JWT_TOKEN": token_acceso, "token_type": "bearer"}
     
     print("❌ ERROR: La contraseña no coincide.")
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario o contraseña incorrectos")
+
+# --- 🌿 ENDPOINT 3: CATALOGAR CULTIVOS OPERATIVOS (PARA EL SPINNER) ---
+@app.get("/api/cultivos")
+async def listar_cultivos():
+    """Consulta Cassandra para extraer los identificadores que poblarán dinámicamente el Spinner de Android"""
+    try:
+        query = "SELECT id_cultivo FROM config_cultivos"
+        rows = await asyncio.to_thread(session.execute, query)
+        lista_cultivos = [row.id_cultivo for row in rows]
+        
+        if not lista_cultivos:
+            lista_cultivos = ["lechuga_01", "tomate_hidro", "fresa_premium"]
+            
+        return {"cultivos": lista_cultivos}
+    except Exception as e:
+        print(f"⚠️ [AUDITORÍA] Error al mapear config_cultivos: {e}")
+        return {"cultivos": ["lechuga_01"]}
+
+# --- 🌿 ENDPOINT 4: REGISTRO DE NUEVA PLANTA (VALIDACIÓN DE MÍNIMOS Y MÁXIMOS) ---
+@app.post("/api/cultivos/registrar", status_code=status.HTTP_201_CREATED)
+async def registrar_cultivo(cultivo: CultivoRegistro):
+    """Recibe la configuración del formulario flotante, procesa las reglas relacionales e indexa en Cassandra"""
+    id_limpio = cultivo.id_cultivo.strip().lower().replace(" ", "_")
+    
+    if not id_limpio:
+        raise HTTPException(status_code=400, detail="El ID del cultivo no puede ser un campo vacío")
+
+    # 📏 REGLAS DE NEGOCIO REQUERIDAS: Condición estricta de orden matemático (Min < Max)
+    if cultivo.temp_min >= cultivo.temp_max:
+        raise HTTPException(status_code=400, detail="Error de Regla: Temperatura Mínima debe ser estrictamente menor a la Máxima")
+    if cultivo.hum_min >= cultivo.hum_max:
+        raise HTTPException(status_code=400, detail="Error de Regla: Humedad Mínima debe ser estrictamente menor a la Máxima")
+    if cultivo.ph_min >= cultivo.ph_max:
+        raise HTTPException(status_code=400, detail="Error de Regla: Nivel de pH Mínimo debe ser estrictamente menor al Máximo")
+    if cultivo.luz_min >= cultivo.luz_max:
+        raise HTTPException(status_code=400, detail="Error de Regla: Intensidad de Luz Mínima debe ser estrictamente menor a la Máxima")
+
+    # 🛡️ VALIDACIÓN DE CONTROL DE ESCALA BIOLÓGICA (Sensores)
+    if cultivo.ph_min < 0.0 or cultivo.ph_max > 14.0:
+        raise HTTPException(status_code=400, detail="Error de Escala: El pH debe estar contenido en el rango físico de 0.0 a 14.0")
+
+    # Control de redundancia: Evitar duplicados en la clave primaria de Cassandra
+    query_existe = "SELECT id_cultivo FROM config_cultivos WHERE id_cultivo = %s"
+    resultado = await asyncio.to_thread(session.execute, query_existe, (id_limpio,))
+    if resultado.one():
+        raise HTTPException(status_code=400, detail=f"El ID '{id_limpio}' ya se encuentra indexado en el Diccionario de Datos")
+
+    # Inserción parametrizada y segura
+    query_insert = """
+        INSERT INTO config_cultivos (id_cultivo, temp_min, temp_max, hum_min, hum_max, ph_min, ph_max, luz_min, luz_max)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """
+    params = (
+        id_limpio, cultivo.temp_min, cultivo.temp_max,
+        cultivo.hum_min, cultivo.hum_max, cultivo.ph_min,
+        cultivo.ph_max, cultivo.luz_min, cultivo.luz_max
+    )
+    await asyncio.to_thread(session.execute, query_insert, params)
+    
+    print(f"🌿 [CASSANDRA] Matriz de negocio expandida. Nuevo cultivo indexado: '{id_limpio}'")
+    return {"message": "Cultivo registrado e indexado exitosamente en el Diccionario de Datos"}
 
 # --- HILO ASÍNCRONO: ARDUINO SERIAL ---
 async def escuchar_arduino():

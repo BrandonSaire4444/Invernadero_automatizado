@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://tools.android.com/tools"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/main"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -11,422 +12,483 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="20dp">
+        android:orientation="vertical">
 
-        <!-- ENCABEZADO PRINCIPAL -->
-        <TextView
+        <!-- 🏢 BARRA DE CONTROL SUPERIOR (ICONOS OPERATIVOS) -->
+        <RelativeLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="HidroponiaPro v2.0"
-            android:textColor="#0F172A"
-            android:textSize="26sp"
-            android:textStyle="bold"
-            android:gravity="center"
-            android:layout_marginTop="8dp"/>
+            android:layout_height="56dp"
+            android:background="#FFFFFF"
+            android:paddingHorizontal="16dp"
+            android:elevation="4dp">
 
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Lazo Cerrado Dinámico e Inercia de Hardware"
-            android:textColor="#475569"
-            android:textSize="13sp"
-            android:gravity="center"
-            android:layout_marginBottom="16dp"/>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_alignParentStart="true"
+                android:layout_centerVertical="true"
+                android:text="HidroponiaPro v4.0"
+                android:textColor="#0F172A"
+                android:textSize="18sp"
+                android:textStyle="bold" />
 
-        <!-- TARJETA INFORMATIVA: SINCRONIZADA CON CASSANDRA -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:layout_alignParentEnd="true"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <!-- Icono Agregar Cultivo -->
+                <ImageButton
+                    android:id="@+id/btnRegistrarPlanta"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Configurar Nuevo Cultivo"
+                    android:src="@android:drawable/ic_menu_add"
+                    app:tint="#10B981"
+                    android:layout_marginEnd="12dp"/>
+
+                <!-- Icono Cerrar Sesión -->
+                <ImageButton
+                    android:id="@+id/btnCerrarSesion"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Cerrar Sesión SCADA"
+                    android:src="@android:drawable/ic_menu_close_clear_cancel"
+                    app:tint="#64748B" />
+            </LinearLayout>
+        </RelativeLayout>
+
+        <!-- CONTENEDOR PRINCIPAL DEL SCADA -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:background="#E0F2FE"
-            android:padding="12dp"
-            android:layout_marginBottom="20dp">
+            android:padding="20dp">
 
             <TextView
-                android:id="@+id/txtNombreVerdura"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="🌱 Cargando cultivo del servidor..."
-                android:textColor="#0369A1"
-                android:textSize="15sp"
-                android:textStyle="bold"/>
+                android:text="Lazo Cerrado Dinámico e Inercia de Hardware"
+                android:textColor="#475569"
+                android:textSize="13sp"
+                android:gravity="center"
+                android:layout_marginBottom="16dp"/>
 
-            <TextView
-                android:id="@+id/txtRangosOptimos"
+            <!-- TARJETA INFORMATIVA: SINCRONIZADA CON CASSANDRA -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Esperando sincronización de Diccionario de Datos..."
-                android:textColor="#0C4A6E"
+                android:orientation="vertical"
+                android:background="#E0F2FE"
+                android:padding="12dp"
+                android:layout_marginBottom="12dp">
+
+                <TextView
+                    android:id="@+id/txtNombreVerdura"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="🌱 Cargando cultivo del servidor..."
+                    android:textColor="#0369A1"
+                    android:textSize="15sp"
+                    android:textStyle="bold"/>
+
+                <TextView
+                    android:id="@+id/txtRangosOptimos"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Esperando sincronización de Diccionario de Datos..."
+                    android:textColor="#0C4A6E"
+                    android:textSize="12sp"
+                    android:layout_marginTop="2dp"/>
+            </LinearLayout>
+
+            <!-- 🔄 SELECCIÓN DINÁMICA DE CULTIVOS -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="SELECCIONAR ESPACIO DE NOMBRE (CASSANDRA)"
+                android:textColor="#475569"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="4dp"/>
+
+            <Spinner
+                android:id="@+id/spinnerCultivos"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:background="@android:drawable/btn_dropdown"
+                android:spinnerMode="dropdown"
+                android:layout_marginBottom="20dp" />
+
+            <!-- SECCIÓN DE TRABAJO: MONITOREO AMBIENTAL -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="INDICADORES AMBIENTALES Y SIMULACIÓN DE PERTURBACIÓN"
+                android:textColor="#475569"
                 android:textSize="12sp"
-                android:layout_marginTop="2dp"/>
-        </LinearLayout>
+                android:textStyle="bold"
+                android:layout_marginBottom="8dp"/>
 
-        <!-- SECCIÓN DE TRABAJO: MONITOREO AMBIENTAL -->
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="INDICADORES AMBIENTALES Y SIMULACIÓN DE PERTURBACIÓN"
-            android:textColor="#475569"
-            android:textSize="12sp"
-            android:textStyle="bold"
-            android:layout_marginBottom="8dp"/>
-
-        <!-- VARIABLE 1: TEMPERATURA -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:background="#FFFFFF"
-            android:padding="16dp"
-            android:layout_marginBottom="14dp">
-
-            <TextView
-                android:id="@+id/txtLabelTemperatura"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Temperatura: 20.0 °C"
-                android:textColor="#1E293B"
-                android:textSize="15sp"
-                android:textStyle="bold" />
-
-            <SeekBar
-                android:id="@+id/seekTemperatura"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:max="50"
-                android:progress="20"
-                android:progressTint="#EF4444"
-                android:thumbTint="#DC2626"/>
-
-            <!-- BOTONES DE CONTROL DE ENTORNO -->
+            <!-- VARIABLE 1: TEMPERATURA -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginTop="10dp"
-                android:gravity="end">
-
-                <Button
-                    android:id="@+id/btnTempMenos"
-                    android:layout_width="wrap_content"
-                    android:layout_height="36dp"
-                    android:text="🥶 Enfriar (-2°C)"
-                    android:textSize="11sp"
-                    android:backgroundTint="#F1F5F9"
-                    android:textColor="#475569"
-                    android:layout_marginEnd="8dp"/>
-
-                <Button
-                    android:id="@+id/btnTempMas"
-                    android:layout_width="wrap_content"
-                    android:layout_height="36dp"
-                    android:text="🔥 Calentar (+2°C)"
-                    android:textSize="11sp"
-                    android:backgroundTint="#FEE2E2"
-                    android:textColor="#991B1B"/>
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- VARIABLE 2: HUMEDAD AMBIENTAL -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:background="#FFFFFF"
-            android:padding="16dp"
-            android:layout_marginBottom="14dp">
-
-            <TextView
-                android:id="@+id/txtLabelHumedad"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Humedad Ambiental: 60 %"
-                android:textColor="#1E293B"
-                android:textSize="15sp"
-                android:textStyle="bold" />
-
-            <SeekBar
-                android:id="@+id/seekHumedad"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:max="100"
-                android:progress="60"
-                android:progressTint="#3B82F6"
-                android:thumbTint="#2563EB"/>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginTop="10dp"
-                android:gravity="end">
-
-                <Button
-                    android:id="@+id/btnHumMenos"
-                    android:layout_width="wrap_content"
-                    android:layout_height="36dp"
-                    android:text="💨 Secar (-5%)"
-                    android:textSize="11sp"
-                    android:backgroundTint="#F1F5F9"
-                    android:textColor="#475569"
-                    android:layout_marginEnd="8dp"/>
-
-                <Button
-                    android:id="@+id/btnHumMas"
-                    android:layout_width="wrap_content"
-                    android:layout_height="36dp"
-                    android:text="💦 Humedecer (+5%)"
-                    android:textSize="11sp"
-                    android:backgroundTint="#DBEAFE"
-                    android:textColor="#1E40AF"/>
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- VARIABLE 3: PH DEL AGUA -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:background="#FFFFFF"
-            android:padding="16dp"
-            android:layout_marginBottom="14dp">
-
-            <TextView
-                android:id="@+id/txtLabelPH"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Nivel de pH: 6.0"
-                android:textColor="#1E293B"
-                android:textSize="15sp"
-                android:textStyle="bold" />
-
-            <SeekBar
-                android:id="@+id/seekPH"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:max="140"
-                android:progress="60"
-                android:progressTint="#8B5CF6"
-                android:thumbTint="#7C3AED"/>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginTop="10dp"
-                android:gravity="end">
-
-                <Button
-                    android:id="@+id/btnPhMenos"
-                    android:layout_width="wrap_content"
-                    android:layout_height="36dp"
-                    android:text="🧪 Ácido (-0.3)"
-                    android:textSize="11sp"
-                    android:backgroundTint="#F1F5F9"
-                    android:textColor="#475569"
-                    android:layout_marginEnd="8dp"/>
-
-                <Button
-                    android:id="@+id/btnPhMas"
-                    android:layout_width="wrap_content"
-                    android:layout_height="36dp"
-                    android:text="🧬 Base (+0.3)"
-                    android:textSize="11sp"
-                    android:backgroundTint="#F3E8FF"
-                    android:textColor="#6B21A8"/>
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- VARIABLE 4: LUMINOSIDAD -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:background="#FFFFFF"
-            android:padding="16dp"
-            android:layout_marginBottom="24dp">
-
-            <TextView
-                android:id="@+id/txtLabelLuz"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Luminosidad: 400 Lux"
-                android:textColor="#1E293B"
-                android:textSize="15sp"
-                android:textStyle="bold" />
-
-            <SeekBar
-                android:id="@+id/seekLuz"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:max="1000"
-                android:progress="400"
-                android:progressTint="#F59E0B"
-                android:thumbTint="#D97706"/>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginTop="10dp"
-                android:gravity="end">
-
-                <Button
-                    android:id="@+id/btnLuzMenos"
-                    android:layout_width="wrap_content"
-                    android:layout_height="36dp"
-                    android:text="☁️ Sombrear (-10)"
-                    android:textSize="11sp"
-                    android:backgroundTint="#F1F5F9"
-                    android:textColor="#475569"
-                    android:layout_marginEnd="8dp"/>
-
-                <Button
-                    android:id="@+id/btnLuzMas"
-                    android:layout_width="wrap_content"
-                    android:layout_height="36dp"
-                    android:text="☀️ Despejar (+10)"
-                    android:textSize="11sp"
-                    android:backgroundTint="#FEF3C7"
-                    android:textColor="#92400E"/>
-            </LinearLayout>
-        </LinearLayout>
-
-        <!-- PANEL SCADA: MONITOREO EN TIEMPO REAL DE ACTUADORES -->
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="TABLERO DE ESTADO SCADA (SISTEMAS AUTOMÁTICOS)"
-            android:textColor="#475569"
-            android:textSize="12sp"
-            android:textStyle="bold"
-            android:layout_marginBottom="8dp"/>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:background="#FFFFFF"
-            android:padding="16dp"
-            android:layout_marginBottom="24dp">
-
-            <!-- ACTUADOR 1: TEMPERATURA -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingVertical="8dp">
-
-                <View
-                    android:id="@+id/ledTemperatura"
-                    android:layout_width="16dp"
-                    android:layout_height="16dp"
-                    android:background="@drawable/led_circular"/>
+                android:orientation="vertical"
+                android:background="#FFFFFF"
+                android:padding="16dp"
+                android:layout_marginBottom="14dp">
 
                 <TextView
-                    android:id="@+id/txtActuadorTemperatura"
+                    android:id="@+id/txtLabelTemperatura"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Extractor de Calor: APAGADO / RANGO ÓPTIMO"
-                    android:textColor="#334155"
-                    android:textSize="14sp"
-                    android:layout_marginStart="12dp"
-                    android:textStyle="bold"/>
+                    android:text="Temperatura: 20.0 °C"
+                    android:textColor="#1E293B"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+
+                <SeekBar
+                    android:id="@+id/seekTemperatura"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:max="50"
+                    android:progress="20"
+                    android:progressTint="#EF4444"
+                    android:thumbTint="#DC2626"/>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="10dp"
+                    android:gravity="end">
+
+                    <Button
+                        android:id="@+id/btnTempMenos"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="🥶 Enfriar (-2°C)"
+                        android:textSize="11sp"
+                        android:backgroundTint="#F1F5F9"
+                        android:textColor="#475569"
+                        android:layout_marginEnd="8dp"/>
+
+                    <Button
+                        android:id="@+id/btnTempMas"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="🔥 Calentar (+2°C)"
+                        android:textSize="11sp"
+                        android:backgroundTint="#FEE2E2"
+                        android:textColor="#991B1B"/>
+                </LinearLayout>
             </LinearLayout>
 
-            <!-- ACTUADOR 2: HUMEDAD -->
+            <!-- VARIABLE 2: HUMEDAD AMBIENTAL -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingVertical="8dp">
-
-                <View
-                    android:id="@+id/ledHumedad"
-                    android:layout_width="16dp"
-                    android:layout_height="16dp"
-                    android:background="@drawable/led_circular"/>
+                android:orientation="vertical"
+                android:background="#FFFFFF"
+                android:padding="16dp"
+                android:layout_marginBottom="14dp">
 
                 <TextView
-                    android:id="@+id/txtActuadorHumedad"
+                    android:id="@+id/txtLabelHumedad"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Bomba / Nebulizador: APAGADO / RANGO ÓPTIMO"
-                    android:textColor="#334155"
-                    android:textSize="14sp"
-                    android:layout_marginStart="12dp"
-                    android:textStyle="bold"/>
+                    android:text="Humedad Ambiental: 60 %"
+                    android:textColor="#1E293B"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+
+                <SeekBar
+                    android:id="@+id/seekHumedad"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:max="100"
+                    android:progress="60"
+                    android:progressTint="#3B82F6"
+                    android:thumbTint="#2563EB"/>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="10dp"
+                    android:gravity="end">
+
+                    <Button
+                        android:id="@+id/btnHumMenos"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="💨 Secar (-5%)"
+                        android:textSize="11sp"
+                        android:backgroundTint="#F1F5F9"
+                        android:textColor="#475569"
+                        android:layout_marginEnd="8dp"/>
+
+                    <Button
+                        android:id="@+id/btnHumMas"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="💦 Humedecer (+5%)"
+                        android:textSize="11sp"
+                        android:backgroundTint="#DBEAFE"
+                        android:textColor="#1E40AF"/>
+                </LinearLayout>
             </LinearLayout>
 
-            <!-- ACTUADOR 3: PH -->
+            <!-- VARIABLE 3: PH DEL AGUA -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingVertical="8dp">
-
-                <View
-                    android:id="@+id/ledPH"
-                    android:layout_width="16dp"
-                    android:layout_height="16dp"
-                    android:background="@drawable/led_circular"/>
+                android:orientation="vertical"
+                android:background="#FFFFFF"
+                android:padding="16dp"
+                android:layout_marginBottom="14dp">
 
                 <TextView
-                    android:id="@+id/txtActuadorPH"
+                    android:id="@+id/txtLabelPH"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Dosificador Químico pH: APAGADO / RANGO ÓPTIMO"
-                    android:textColor="#334155"
-                    android:textSize="14sp"
-                    android:layout_marginStart="12dp"
-                    android:textStyle="bold"/>
+                    android:text="Nivel de pH: 6.0"
+                    android:textColor="#1E293B"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+
+                <SeekBar
+                    android:id="@+id/seekPH"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:max="140"
+                    android:progress="60"
+                    android:progressTint="#8B5CF6"
+                    android:thumbTint="#7C3AED"/>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="10dp"
+                    android:gravity="end">
+
+                    <Button
+                        android:id="@+id/btnPhMenos"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="🧪 Ácido (-0.3)"
+                        android:textSize="11sp"
+                        android:backgroundTint="#F1F5F9"
+                        android:textColor="#475569"
+                        android:layout_marginEnd="8dp"/>
+
+                    <Button
+                        android:id="@+id/btnPhMas"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="🧬 Base (+0.3)"
+                        android:textSize="11sp"
+                        android:backgroundTint="#F3E8FF"
+                        android:textColor="#6B21A8"/>
+                </LinearLayout>
             </LinearLayout>
 
-            <!-- ACTUADOR 4: ILUMINACIÓN -->
+            <!-- VARIABLE 4: LUMINOSIDAD -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingVertical="8dp">
-
-                <View
-                    android:id="@+id/ledLuz"
-                    android:layout_width="16dp"
-                    android:layout_height="16dp"
-                    android:background="@drawable/led_circular"/>
+                android:orientation="vertical"
+                android:background="#FFFFFF"
+                android:padding="16dp"
+                android:layout_marginBottom="24dp">
 
                 <TextView
-                    android:id="@+id/txtActuadorLuz"
+                    android:id="@+id/txtLabelLuz"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Iluminación de Soporte: APAGADA / RANGO ÓPTIMO"
-                    android:textColor="#334155"
-                    android:textSize="14sp"
-                    android:layout_marginStart="12dp"
-                    android:textStyle="bold"/>
+                    android:text="Luminosidad: 400 Lux"
+                    android:textColor="#1E293B"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+
+                <SeekBar
+                    android:id="@+id/seekLuz"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:max="1000"
+                    android:progress="400"
+                    android:progressTint="#F59E0B"
+                    android:thumbTint="#D97706"/>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="10dp"
+                    android:gravity="end">
+
+                    <Button
+                        android:id="@+id/btnLuzMenos"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="☁️ Sombrear (-10)"
+                        android:textSize="11sp"
+                        android:backgroundTint="#F1F5F9"
+                        android:textColor="#475569"
+                        android:layout_marginEnd="8dp"/>
+
+                    <Button
+                        android:id="@+id/btnLuzMas"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="☀️ Despejar (+10)"
+                        android:textSize="11sp"
+                        android:backgroundTint="#FEF3C7"
+                        android:textColor="#92400E"/>
+                </LinearLayout>
             </LinearLayout>
+
+            <!-- PANEL SCADA: MONITOREO DE ACTUADORES -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="TABLERO DE ESTADO SCADA (SISTEMAS AUTOMÁTICOS)"
+                android:textColor="#475569"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="8dp"/>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="#FFFFFF"
+                android:padding="16dp"
+                android:layout_marginBottom="24dp">
+
+                <!-- ACTUADOR 1: TEMPERATURA -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingVertical="8dp">
+
+                    <View
+                        android:id="@+id/ledTemperatura"
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:background="@android:drawable/presence_online"/>
+
+                    <TextView
+                        android:id="@+id/txtActuadorTemperatura"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Extractor de Calor: APAGADO / RANGO ÓPTIMO"
+                        android:textColor="#334155"
+                        android:textSize="14sp"
+                        android:layout_marginStart="12dp"
+                        android:textStyle="bold"/>
+                </LinearLayout>
+
+                <!-- ACTUADOR 2: HUMEDAD -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingVertical="8dp">
+
+                    <View
+                        android:id="@+id/ledHumedad"
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:background="@android:drawable/presence_online"/>
+
+                    <TextView
+                        android:id="@+id/txtActuadorHumedad"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Bomba / Nebulizador: APAGADO / RANGO ÓPTIMO"
+                        android:textColor="#334155"
+                        android:textSize="14sp"
+                        android:layout_marginStart="12dp"
+                        android:textStyle="bold"/>
+                </LinearLayout>
+
+                <!-- ACTUADOR 3: PH -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingVertical="8dp">
+
+                    <View
+                        android:id="@+id/ledPH"
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:background="@android:drawable/presence_online"/>
+
+                    <TextView
+                        android:id="@+id/txtActuadorPH"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Dosificador Químico pH: APAGADO / RANGO ÓPTIMO"
+                        android:textColor="#334155"
+                        android:textSize="14sp"
+                        android:layout_marginStart="12dp"
+                        android:textStyle="bold"/>
+                </LinearLayout>
+
+                <!-- ACTUADOR 4: ILUMINACIÓN -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingVertical="8dp">
+
+                    <View
+                        android:id="@+id/ledLuz"
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:background="@android:drawable/presence_online"/>
+
+                    <TextView
+                        android:id="@+id/txtActuadorLuz"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="Iluminación de Soporte: APAGADA / RANGO ÓPTIMO"
+                        android:textColor="#334155"
+                        android:textSize="14sp"
+                        android:layout_marginStart="12dp"
+                        android:textStyle="bold"/>
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- STATUS DE TRANSMISIÓN -->
+            <TextView
+                android:id="@+id/txtEstadoConexion"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="🔄 Conectando al servicio local..."
+                android:textColor="#059669"
+                android:textSize="13sp"
+                android:textStyle="italic"
+                android:gravity="center"
+                android:layout_marginTop="20dp"/>
+
         </LinearLayout>
-
-        <!-- INDICADOR ESTADO DE TRANSMISIÓN -->
-        <TextView
-            android:id="@+id/txtEstadoConexion"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="🔄 Conectando al servicio local..."
-            android:textColor="#059669"
-            android:textSize="13sp"
-            android:textStyle="italic"
-            android:gravity="center"
-            android:layout_marginBottom="12dp"/>
-
     </LinearLayout>
 </ScrollView>

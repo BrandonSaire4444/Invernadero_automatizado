@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://tools.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#F0F4F8"
+    android:fillViewport="true"
+    tools:context=".RegistrarCultivoActivity">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <!-- Encabezado de la Ventana -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🌱 CONFIGURAR NUEVO CULTIVO"
+            android:textColor="#0F172A"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:layout_marginBottom="4dp"/>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Inserción de diccionarios de control en Cassandra"
+            android:textColor="#64748B"
+            android:textSize="12sp"
+            android:gravity="center"
+            android:layout_marginBottom="20dp"/>
+
+        <!-- SECCIÓN 1: IDENTIFICADORES DE TEXTO -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="#FFFFFF"
+            android:padding="16dp"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="ID único del Cultivo (Ej: lechuga_01)"
+                android:textColor="#334155"
+                android:textStyle="bold"
+                android:textSize="13sp"/>
+            <EditText
+                android:id="@+id/txtIdCultivo"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:hint="id_cultivo"
+                android:inputType="textShortMessage"
+                android:layout_marginBottom="12dp"/>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Nombre Comercial / Común"
+                android:textColor="#334155"
+                android:textStyle="bold"
+                android:textSize="13sp"/>
+            <EditText
+                android:id="@+id/txtNombreVerdura"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:hint="Nombre de la verdura"
+                android:inputType="textCapSentences"/>
+        </LinearLayout>
+
+        <!-- SECCIÓN 2: LÍMITES OPERATIVOS (FLOATS) -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="UMBRALES DE ALERTA SCADA"
+            android:textColor="#475569"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp"/>
+
+        <!-- Fila Temperatura -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:weightSum="2"
+            android:layout_marginBottom="10dp">
+            <EditText
+                android:id="@+id/txtTempMin"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:hint="Temp Mín (°C)"
+                android:inputType="numberDecimal"
+                android:layout_marginEnd="6dp"
+                android:background="#FFFFFF"
+                android:padding="10dp"/>
+            <EditText
+                android:id="@+id/txtTempMax"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:hint="Temp Máx (°C)"
+                android:inputType="numberDecimal"
+                android:layout_marginStart="6dp"
+                android:background="#FFFFFF"
+                android:padding="10dp"/>
+        </LinearLayout>
+
+        <!-- Fila Humedad -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:weightSum="2"
+            android:layout_marginBottom="10dp">
+            <EditText
+                android:id="@+id/txtHumMin"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:hint="Hum Mín (%)"
+                android:inputType="numberDecimal"
+                android:layout_marginEnd="6dp"
+                android:background="#FFFFFF"
+                android:padding="10dp"/>
+            <EditText
+                android:id="@+id/txtHumMax"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:hint="Hum Máx (%)"
+                android:inputType="numberDecimal"
+                android:layout_marginStart="6dp"
+                android:background="#FFFFFF"
+                android:padding="10dp"/>
+        </LinearLayout>
+
+        <!-- Fila pH del agua -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:weightSum="2"
+            android:layout_marginBottom="10dp">
+            <EditText
+                android:id="@+id/txtPhMin"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:hint="pH Mín"
+                android:inputType="numberDecimal"
+                android:layout_marginEnd="6dp"
+                android:background="#FFFFFF"
+                android:padding="10dp"/>
+            <EditText
+                android:id="@+id/txtPhMax"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:hint="pH Máx"
+                android:inputType="numberDecimal"
+                android:layout_marginStart="6dp"
+                android:background="#FFFFFF"
+                android:padding="10dp"/>
+        </LinearLayout>
+
+        <!-- Fila Luminosidad -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:weightSum="2"
+            android:layout_marginBottom="24dp">
+            <EditText
+                android:id="@+id/txtLuzMin"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:hint="Luz Mín (Lux)"
+                android:inputType="numberDecimal"
+                android:layout_marginEnd="6dp"
+                android:background="#FFFFFF"
+                android:padding="10dp"/>
+            <EditText
+                android:id="@+id/txtLuzMax"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:hint="Luz Máx (Lux)"
+                android:inputType="numberDecimal"
+                android:layout_marginStart="6dp"
+                android:background="#FFFFFF"
+                android:padding="10dp"/>
+        </LinearLayout>
+
+        <!-- ACCIONES -->
+        <Button
+            android:id="@+id/btnGuardarCultivo"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:text="💾 Subir Parámetros a API"
+            android:backgroundTint="#10B981"
+            android:textColor="#FFFFFF"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="12dp"/>
+
+        <Button
+            android:id="@+id/btnCancelarCultivo"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:text="Cancelar"
+            android:backgroundTint="#64748B"
+            android:textColor="#FFFFFF"
+            style="@style/Widget.AppCompat.Button.Borderless"/>
+
+    </LinearLayout>
+</ScrollView>

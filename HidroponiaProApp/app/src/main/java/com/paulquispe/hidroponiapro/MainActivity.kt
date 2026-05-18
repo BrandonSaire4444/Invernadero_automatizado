@@ -1,5 +1,5 @@
 package com.paulquispe.hidroponiapro
-
+import android.widget.ImageButton
 import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
@@ -8,20 +8,25 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.View
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.SeekBar
+import android.widget.Spinner
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import org.json.JSONObject
 import okhttp3.*
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 @Suppress("SetTextI18n")
 class MainActivity : AppCompatActivity() {
 
     // --- VARIABLES DE INFRAESTRUCTURA DINÁMICA ---
-    private val baseWebSocketUrl = "ws://127.0.0.1:8000/ws/invernadero"
-    private var idCultivo: String = "lechuga_01" // Por defecto, luego se puede automatizar
+    private val baseWebSocketUrl = "ws://192.168.2.108:8000/ws/invernadero"
+    private val baseHttpUrl = "http://192.168.2.108:8000/api/cultivos"
+    private var idCultivo: String = "lechuga_01"
     private var tokenJwt: String = ""
 
     // Componentes de la Interfaz Gráfica
@@ -32,6 +37,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var txtLabelPH: TextView
     private lateinit var txtLabelLuz: TextView
     private lateinit var txtEstadoConexion: TextView
+    private lateinit var spinnerCultivos: Spinner
 
     // Componentes del Panel SCADA
     private lateinit var ledTemperatura: View
@@ -44,13 +50,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var txtActuadorPH: TextView
     private lateinit var txtActuadorLuz: TextView
 
-    // Las SeekBars ahora actúan como pantallas analógicas (lectura pura)
+    // Las SeekBars actúan como pantallas analógicas (lectura pura)
     private lateinit var seekTemperatura: SeekBar
     private lateinit var seekHumedad: SeekBar
     private lateinit var seekPH: SeekBar
     private lateinit var seekLuz: SeekBar
 
-    // NUEVO MOTOR DE ESTADOS: Almacenan la directiva del backend para simular la inercia
+    // MOTOR DE ESTADOS: Directivas del backend
     private var estadoActTemp = "VERDE"
     private var estadoActHum = "VERDE"
     private var estadoActPh = "VERDE"
@@ -64,28 +70,27 @@ class MainActivity : AppCompatActivity() {
     private val handlerTransmision = Handler(Looper.getMainLooper())
     private val handlerInerciaFisica = Handler(Looper.getMainLooper())
 
-    private val intervaloTransmision = 3000L // Transmisión regular a Cassandra cada 3s
-    private val intervaloFisica = 1000L       // Reacción de actuadores cada 1s (Lento y visible)
+    private val intervaloTransmision = 3000L // Transmisión a Cassandra cada 3s
+    private val intervaloFisica = 1000L       // Reacción de actuadores cada 1s
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        // EXCELENCIA OPERACIONAL: Extraemos el Token JWT persistido por el LoginActivity
         val sharedPref = getSharedPreferences("AUTH_PREFS", Context.MODE_PRIVATE)
         tokenJwt = sharedPref.getString("JWT_TOKEN", "") ?: ""
-
-        inicializarVistas()
-        bloquearSeekBars()         // Volvemos las barras de lectura pura
-        configurarBotonesPerturbacion() // Los botones inyectan anomalías del entorno
-        configurarBotonesNavegacion()   // Inicializa la acción del botón Salir
 
         client = OkHttpClient.Builder()
             .readTimeout(3, TimeUnit.SECONDS)
             .build()
 
-        conectarAlServidorEspejo()
-        iniciarLoopFisicaEntorno() // Arranca el motor de lazo cerrado
+        inicializarVistas()
+        bloquearSeekBars()
+        configurarBotonesPerturbacion()
+        configurarBotonesNavegacion() // <-- Este método se encargará de todo
+
+        cargarCultivosDesdeApi()
+        iniciarLoopFisicaEntorno()
     }
 
     private fun inicializarVistas() {
@@ -96,6 +101,7 @@ class MainActivity : AppCompatActivity() {
         txtLabelPH = findViewById(R.id.txtLabelPH)
         txtLabelLuz = findViewById(R.id.txtLabelLuz)
         txtEstadoConexion = findViewById(R.id.txtEstadoConexion)
+        spinnerCultivos = findViewById(R.id.spinnerCultivos) // Asegúrate de tener este ID en tu XML
 
         ledTemperatura = findViewById(R.id.ledTemperatura)
         ledHumedad = findViewById(R.id.ledHumedad)
@@ -134,10 +140,86 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnLuzMenos).setOnClickListener { perturbarSensor(seekLuz, 20, false) }
     }
 
-    // AUDITORÍA DE SEGURIDAD: Limpiado temporalmente para evitar errores de ID XML
     private fun configurarBotonesNavegacion() {
-        // Método libre de errores para priorizar la transmisión de datos
+        // 🛡️ Enlace corregido a ImageButton para evitar el ClassCastException
+        findViewById<ImageButton>(R.id.btnRegistrarPlanta).setOnClickListener {
+            val intent = Intent(this, RegistrarCultivoActivity::class.java)
+            startActivity(intent)
+        }
+
+        // 🛡️ Enlace corregido para el botón de salida segura
+        findViewById<ImageButton>(R.id.btnCerrarSesion).setOnClickListener {
+            val sharedPref = getSharedPreferences("AUTH_PREFS", Context.MODE_PRIVATE)
+            sharedPref.edit().remove("JWT_TOKEN").apply()
+
+            webSocket?.close(1000, "Cierre voluntario de sesión")
+            val intent = Intent(this, LoginActivity::class.java)
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            startActivity(intent)
+            finish()
+        }
     }
+
+    private fun cargarCultivosDesdeApi() {
+        val request = Request.Builder()
+            .url(baseHttpUrl)
+            .header("Authorization", "Bearer $tokenJwt")
+            .get()
+            .build()
+
+        client.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                runOnUiThread {
+                    txtEstadoConexion.text = "⚠️ Error cargando matriz: Usando locales"
+                    configurarSpinner(listOf("lechuga_01", "tomate_hidro", "fresa_premium"))
+                }
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                response.use {
+                    if (!response.isSuccessful) {
+                        runOnUiThread { configurarSpinner(listOf("lechuga_01")) }
+                        return
+                    }
+                    val body = response.body?.string() ?: ""
+                    try {
+                        val json = JSONObject(body)
+                        val array = json.getJSONArray("cultivos")
+                        val lista = ArrayList<String>()
+                        for (i in 0 until array.length()) {
+                            lista.add(array.getString(i))
+                        }
+                        runOnUiThread { configurarSpinner(lista) }
+                    } catch (e: Exception) {
+                        runOnUiThread { configurarSpinner(listOf("lechuga_01")) }
+                    }
+                }
+            }
+        })
+    }
+
+    private fun configurarSpinner(listaCultivos: List<String>) {
+        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, listaCultivos)
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinnerCultivos.adapter = adapter
+
+        spinnerCultivos.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val nuevoCultivo = listaCultivos[position]
+                if (nuevoCultivo != idCultivo) {
+                    idCultivo = nuevoCultivo
+
+                    // Cancelamos y cerramos explícitamente el socket actual
+                    handlerTransmision.removeCallbacksAndMessages(null)
+                    webSocket?.close(1000, "Cambiando de monitoreo")
+                    webSocket = null
+
+                    conectarAlServidorEspejo()
+                }
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+    } // <--- 🛠️ ¡ESTA LLAVE FALTABA! Cierra correctamente configurarSpinner
 
     private fun perturbarSensor(seekBar: SeekBar, delta: Int, incrementar: Boolean) {
         val actual = seekBar.progress
@@ -146,6 +228,8 @@ class MainActivity : AppCompatActivity() {
         actualizarDisplaysGraficos()
         enviarDatosInstantaneos()
     }
+
+
 
     private fun actualizarDisplaysGraficos() {
         txtLabelTemperatura.text = "Temperatura: ${seekTemperatura.progress}.0 °C"
@@ -201,14 +285,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun conectarAlServidorEspejo() {
-        // APRETÓN DE MANOS SINCRÓNICO: Concatenamos la ruta dinámica con el token JWT inyectado
         val urlSincronizada = "$baseWebSocketUrl/$idCultivo?token=$tokenJwt"
         val request = Request.Builder().url(urlSincronizada).build()
 
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 runOnUiThread {
-                    txtEstadoConexion.text = "✅ Canal SCADA [$idCultivo] Verificado por JWT"
+                    txtEstadoConexion.text = "✅ Canal SCADA [$idCultivo] Verificado"
                 }
                 iniciarLoopTransmision()
             }
@@ -218,18 +301,29 @@ class MainActivity : AppCompatActivity() {
                     try {
                         val respuestaJson = JSONObject(text)
 
-                        if (respuestaJson.has("txt_verdura")) {
-                            txtNombreVerdura.text = respuestaJson.getString("txt_verdura")
-                        }
-                        if (respuestaJson.has("txt_rangos")) {
-                            txtRangosOptimos.text = respuestaJson.getString("txt_rangos")
+                        // Usamos optString en lugar de getString para evitar excepciones si la clave varía o falta
+                        val nombreVerdura = respuestaJson.optString("txt_verdura", "")
+                        if (nombreVerdura.isNotEmpty()) {
+                            txtNombreVerdura.text = nombreVerdura
                         }
 
-                        estadoActTemp = respuestaJson.getString("actuador_temp")
-                        estadoActHum = respuestaJson.getString("actuador_hum")
-                        estadoActPh = respuestaJson.getString("actuador_ph")
-                        estadoActLuz = respuestaJson.getString("actuador_luz")
+                        // Validamos ambas variantes de claves ("txt_rangos" o "ranges") para soportar el backend
+                        val rangos = when {
+                            respuestaJson.has("txt_rangos") -> respuestaJson.getString("txt_rangos")
+                            respuestaJson.has("ranges") -> respuestaJson.getString("ranges")
+                            else -> ""
+                        }
+                        if (rangos.isNotEmpty()) {
+                            txtRangosOptimos.text = rangos
+                        }
 
+                        // Lectura segura de actuadores
+                        estadoActTemp = respuestaJson.optString("actuador_temp", "VERDE")
+                        estadoActHum = respuestaJson.optString("actuador_hum", "VERDE")
+                        estadoActPh = respuestaJson.optString("actuador_ph", "VERDE")
+                        estadoActLuz = respuestaJson.optString("actuador_luz", "VERDE")
+
+                        // Actualización del Tablero Gráfico
                         actualizarLedSCADA(ledTemperatura, txtActuadorTemperatura, "Extractor / Calefactor", estadoActTemp)
                         actualizarLedSCADA(ledHumedad, txtActuadorHumedad, "Bomba / Nebulizador", estadoActHum)
                         actualizarLedSCADA(ledPH, txtActuadorPH, "Dosificador de Solución", estadoActPh)
@@ -237,7 +331,7 @@ class MainActivity : AppCompatActivity() {
 
                         txtEstadoConexion.text = "📥 Tablero SCADA Sincronizado en Tiempo Real"
                     } catch (e: Exception) {
-                        txtEstadoConexion.text = "❌ Error de sincronización: ${e.localizedMessage}"
+                        txtEstadoConexion.text = "❌ Error de parseo SCADA: ${e.localizedMessage}"
                     }
                 }
             }
