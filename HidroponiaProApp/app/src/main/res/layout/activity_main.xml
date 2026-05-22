@@ -25,7 +25,6 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_alignParentStart="true"
                 android:layout_centerVertical="true"
                 android:text="HidroponiaPro v4.0"
                 android:textColor="#0F172A"
@@ -337,6 +336,7 @@
                     android:layout_marginTop="10dp"
                     android:gravity="end">
 
+                    <!-- 🛠️ CORREGIDO: ID INYECTADO PARA EL MANEJADOR DE PERTURBACIÓN KOTLIN -->
                     <Button
                         android:id="@+id/btnLuzMenos"
                         android:layout_width="wrap_content"
@@ -347,6 +347,7 @@
                         android:textColor="#475569"
                         android:layout_marginEnd="8dp"/>
 
+                    <!-- 🛠️ CORREGIDO: ID INYECTADO PARA EL MANEJADOR DE PERTURBACIÓN KOTLIN -->
                     <Button
                         android:id="@+id/btnLuzMas"
                         android:layout_width="wrap_content"

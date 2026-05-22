@@ -203,3 +203,42 @@ NOTAS DE AUDITORÍA Y DISEÑO:
   directa con los tipos 'Float' de Kotlin en Android Studio para evitar pérdidas
   de precisión al mover los deslizadores (SeekBars) en la feria.
 ================================================================================
+
+
+
+DICCIONARIO DE DATOS - PROYECTO HIDROPONIA PRO 20 mayo 2026
+
+1. TABLA: config_cultivos
+--------------------------------------------------
+- id_cultivo (text): Identificador único del cultivo (Ej: 'lechuga_01'). (Primary Key)
+- activo (boolean): Indicador de estado (true=activo, false=eliminado).
+- hum_max (float): Humedad ambiental máxima permitida.
+- hum_min (float): Humedad ambiental mínima permitida.
+- luz_max (float): Luminosidad máxima permitida (Lux).
+- luz_min (float): Luminosidad mínima permitida (Lux).
+- nombre_verdura (text): Nombre común o variedad del cultivo.
+- ph_max (float): Nivel de pH máximo permitido.
+- ph_min (float): Nivel de pH mínimo permitido.
+- temp_max (float): Temperatura máxima permitida (°C).
+- temp_min (float): Temperatura mínima permitida (°C).
+
+2. TABLA: estado_actuadores
+--------------------------------------------------
+- componente (text): Nombre del actuador (Ej: 'bomba_agua'). (Primary Key)
+- estado (text): Estado actual del componente.
+- ultima_actualizacion (timestamp): Registro de tiempo del último cambio.
+
+3. TABLA: lecturas_sensores
+--------------------------------------------------
+- origen (text): Identificador del sensor. (Partition Key)
+- fecha_hora (timestamp): Momento de la lectura. (Clustering Key - Orden DESC)
+- humedad (float): Valor de humedad ambiental.
+- luz (float): Valor de intensidad lumínica.
+- ph (float): Valor de pH del agua.
+- temperatura (float): Valor de temperatura ambiental (°C).
+
+4. TABLA: usuarios
+--------------------------------------------------
+- username (text): Identificador único del operador. (Primary Key)
+- nombre (text): Nombre completo del usuario.
+- password_hash (text): Hash de la contraseña (bcrypt).

@@ -24,7 +24,7 @@ class LoginActivity : AppCompatActivity() {
     private val client = OkHttpClient()
 
     // Usando IP de red local para comunicación transparente física/emulador
-    private val BASE_URL = "http://192.168.2.108:8000"
+    private val BASE_URL = "http://127.0.0.1:8000"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -65,63 +65,58 @@ class LoginActivity : AppCompatActivity() {
     }
 
     private suspend fun ejecutarLogin(user: String, pass: String) {
-        val formBody = FormBody.Builder()
-            .add("username", user)
-            .add("password", pass)
-            .build()
+        val jsonMediaType = "application/json; charset=utf-8".toMediaTypeOrNull()
 
+        // 1. Construimos el JSON tal como lo espera FastAPI
+        val jsonBody = JSONObject().apply {
+            put("username", user)
+            put("password", pass)
+        }.toString()
+
+        val body = RequestBody.create(jsonMediaType, jsonBody)
+
+        // 2. Configuramos la petición con el encabezado correcto
         val request = Request.Builder()
             .url("$BASE_URL/api/login")
+            .addHeader("Content-Type", "application/json") // <-- ESTO ES LO QUE FALTABA
             .addHeader("Accept", "application/json")
-            .post(formBody)
+            .post(body)
             .build()
 
         var loginExitoso = false
         var accessToken: String? = null
 
         try {
-            // 📡 Procesamos la red estrictamente en segundo plano
             client.newCall(request).execute().use { response ->
                 val responseData = response.body?.string()
                 if (response.isSuccessful && responseData != null) {
                     val jsonObject = JSONObject(responseData)
-                    // Mapeamos de forma flexible si viene en minúsculas o mayúsculas del API
-                    accessToken = when {
-                        jsonObject.has("access_token") -> jsonObject.getString("access_token")
-                        jsonObject.has("JWT_TOKEN") -> jsonObject.getString("JWT_TOKEN")
-                        else -> null
-                    }
+                    // 3. BUSCAMOS "token" porque eso es lo que devuelve tu main.py
+                    accessToken = if (jsonObject.has("token")) jsonObject.getString("token") else null
                     if (accessToken != null) {
                         loginExitoso = true
                     }
                 }
             }
 
-            // 🚀 Una vez cerrada la conexión de red de forma segura, volvemos a la UI
             withContext(Dispatchers.Main) {
                 if (loginExitoso && accessToken != null) {
-                    // Persistencia segura local
                     val sharedPref = getSharedPreferences("AUTH_PREFS", Context.MODE_PRIVATE)
                     sharedPref.edit().apply {
                         putString("JWT_TOKEN", accessToken)
                         putString("USERNAME", user)
                         apply()
                     }
-
                     Toast.makeText(this@LoginActivity, "Autenticación Exitosa", Toast.LENGTH_SHORT).show()
-
-                    // Salto limpio al Tablero SCADA
-                    val intent = Intent(this@LoginActivity, MainActivity::class.java)
-                    startActivity(intent)
+                    startActivity(Intent(this@LoginActivity, MainActivity::class.java))
                     finish()
                 } else {
                     Toast.makeText(this@LoginActivity, "Usuario o contraseña incorrectos", Toast.LENGTH_SHORT).show()
                 }
             }
-
         } catch (e: Exception) {
             withContext(Dispatchers.Main) {
-                Toast.makeText(this@LoginActivity, "Error de conexión con el servidor SCADA", Toast.LENGTH_LONG).show()
+                Toast.makeText(this@LoginActivity, "Error de conexión: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
     }

@@ -1,0 +1,32 @@
+
+GUÍA DE ARRANQUE: PROYECTO HIDROPONIA PRO
+
+Sigue estos pasos en orden para levantar todo tu entorno de desarrollo.
+
+1. LEVANTAR LA BASE DE DATOS (CASSANDRA)
+----------------------------------------
+Abre una terminal y ejecuta:
+- docker start cassandra-hidroponia
+- docker ps -a  # Verifica que el estado sea 'Up'
+
+2. LEVANTAR EL BACKEND (FASTAPI)
+--------------------------------
+En una nueva terminal:
+- cd /mnt/projects/hidroponia_pro/backend_fastapi
+- source venv/bin/activate
+- uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
+3. CONECTAR EL DISPOSITIVO (ADB REVERSE)
+----------------------------------------
+Es vital ejecutar esto cada vez que conectes tu dispositivo por USB para que
+la aplicación pueda ver el servidor FastAPI en tu PC:
+- adb reverse tcp:8000 tcp:8000
+
+4. ABRIR EL PROYECTO ANDROID
+----------------------------
+- flatpak run com.google.AndroidStudio /mnt/projects/hidroponia_pro/HidroponiaProApp
+
+NOTAS IMPORTANTES:
+- Si el backend da 'Connection Refused', verifica que Docker esté arriba.
+- Si la App no conecta con la API, repite el comando 'adb reverse'.
+- Mantén siempre el venv activado antes de lanzar uvicorn.

@@ -2,113 +2,156 @@ package com.paulquispe.hidroponiapro
 
 import android.content.Context
 import android.os.Bundle
+import android.text.Editable
+import android.text.TextWatcher
 import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import kotlinx.coroutines.CoroutineScope
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody
-import org.json.JSONObject
 
 class RegistrarCultivoActivity : AppCompatActivity() {
 
-    private val client = OkHttpClient()
-    private val BASE_URL = "http://192.168.2.108:8000"
     private var tokenJwt: String = ""
+
+    // Componentes del Formulario de Registro
+    private lateinit var etNombreVerdura: EditText
+    private lateinit var etTempMin: EditText
+    private lateinit var etTempMax: EditText
+    private lateinit var etHumMin: EditText
+    private lateinit var etHumMax: EditText
+    private lateinit var etPhMin: EditText
+    private lateinit var etPhMax: EditText
+    private lateinit var etLuzMin: EditText
+    private lateinit var etLuzMax: EditText
+    private lateinit var btnGuardar: Button
+    private lateinit var btnCancelar: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // 🛡️ Inflamos la vista del formulario
         setContentView(R.layout.activity_registrar_cultivo)
 
-        // Extraemos token para la cabecera de autorización HTTP
+        // Extraemos token de autenticación por si tu backend lo requiere en las cabeceras
         val sharedPref = getSharedPreferences("AUTH_PREFS", Context.MODE_PRIVATE)
         tokenJwt = sharedPref.getString("JWT_TOKEN", "") ?: ""
 
-        // Inicialización minuciosa de componentes mapeados en Cassandra
-        val txtIdCultivo = findViewById<EditText>(R.id.txtIdCultivo)
-        val txtNombreVerdura = findViewById<EditText>(R.id.txtNombreVerdura)
-        val txtTempMin = findViewById<EditText>(R.id.txtTempMin)
-        val txtTempMax = findViewById<EditText>(R.id.txtTempMax)
-        val txtHumMin = findViewById<EditText>(R.id.txtHumMin)
-        val txtHumMax = findViewById<EditText>(R.id.txtHumMax)
-        val txtPhMin = findViewById<EditText>(R.id.txtPhMin)
-        val txtPhMax = findViewById<EditText>(R.id.txtPhMax)
-        val txtLuzMin = findViewById<EditText>(R.id.txtLuzMin)
-        val txtLuzMax = findViewById<EditText>(R.id.txtLuzMax)
+        // Inicialización minuciosa de componentes
+        inicializarVistas()
 
-        findViewById<Button>(R.id.btnGuardarCultivo).setOnClickListener {
-            val idCultivo = txtIdCultivo.text.toString().trim()
-            val nombreVerdura = txtNombreVerdura.text.toString().trim()
+        // Adjuntar el validador predictivo en tiempo real a los campos numéricos
+        configurarValidadorTiempoReal()
 
-            // Validación de campos vacíos para evitar inconsistencias de red
-            if (idCultivo.isEmpty() || nombreVerdura.isEmpty() ||
-                txtTempMin.text.isEmpty() || txtTempMax.text.isEmpty() ||
-                txtHumMin.text.isEmpty() || txtHumMax.text.isEmpty() ||
-                txtPhMin.text.isEmpty() || txtPhMax.text.isEmpty() ||
-                txtLuzMin.text.isEmpty() || txtLuzMax.text.isEmpty()) {
-
-                Toast.makeText(this, "⚠️ Todos los campos son obligatorios", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-
-            // Construcción del JSON con tipos numéricos correctos (float)
-            val jsonPayload = JSONObject().apply {
-                put("id_cultivo", idCultivo)
-                put("nombre_verdura", nombreVerdura)
-                put("temp_min", txtTempMin.text.toString().toFloat())
-                put("temp_max", txtTempMax.text.toString().toFloat())
-                put("hum_min", txtHumMin.text.toString().toFloat())
-                put("hum_max", txtHumMax.text.toString().toFloat())
-                put("ph_min", txtPhMin.text.toString().toFloat())
-                put("ph_max", txtPhMax.text.toString().toFloat())
-                put("luz_min", txtLuzMin.text.toString().toFloat())
-                put("luz_max", txtLuzMax.text.toString().toFloat())
-            }.toString()
-
-            // Transmisión asíncrona hacia FastAPI para no congelar la UI
-            CoroutineScope(Dispatchers.IO).launch {
-                enviarCultivoAlServidor(jsonPayload)
-            }
+        // Acción del botón Guardar mediante el motor centralizado de Retrofit
+        btnGuardar.setOnClickListener {
+            ejecutarRegistroDeCultivo()
         }
 
         // Botón Cancelar: Cierra la ventana actual y vuelve al SCADA de inmediato
-        findViewById<Button>(R.id.btnCancelarCultivo).setOnClickListener {
+        btnCancelar.setOnClickListener {
             finish()
         }
     }
 
-    private suspend fun enviarCultivoAlServidor(json: String) {
-        val mediaType = "application/json; charset=utf-8".toMediaTypeOrNull()
-        val body = RequestBody.create(mediaType, json)
+    private fun inicializarVistas() {
+        etNombreVerdura = findViewById(R.id.txtNombreVerdura)
+        etTempMin = findViewById(R.id.txtTempMin)
+        etTempMax = findViewById(R.id.txtTempMax)
+        etHumMin = findViewById(R.id.txtHumMin)
+        etHumMax = findViewById(R.id.txtHumMax)
+        etPhMin = findViewById(R.id.txtPhMin)
+        etPhMax = findViewById(R.id.txtPhMax)
+        etLuzMin = findViewById(R.id.txtLuzMin)
+        etLuzMax = findViewById(R.id.txtLuzMax)
+        btnGuardar = findViewById(R.id.btnGuardarCultivo)
+        btnCancelar = findViewById(R.id.btnCancelarCultivo)
+    }
 
-        val request = Request.Builder()
-            .url("$BASE_URL/api/cultivos/registrar")
-            .addHeader("Authorization", "Bearer $tokenJwt")
-            .post(body)
-            .build()
+    private fun configurarValidadorTiempoReal() {
+        val validador = FieldValidator()
+        etNombreVerdura.addTextChangedListener(validador)
+        etTempMin.addTextChangedListener(validador)
+        etTempMax.addTextChangedListener(validador)
+        etHumMin.addTextChangedListener(validador)
+        etHumMax.addTextChangedListener(validador)
+        etPhMin.addTextChangedListener(validador)
+        etPhMax.addTextChangedListener(validador)
+        etLuzMin.addTextChangedListener(validador)
+        etLuzMax.addTextChangedListener(validador)
+    }
 
-        try {
-            client.newCall(request).execute().use { response ->
-                withContext(Dispatchers.Main) {
-                    if (response.isSuccessful) {
-                        Toast.makeText(this@RegistrarCultivoActivity, "🌱 Cultivo guardado e indexado", Toast.LENGTH_LONG).show()
-                        finish() // Retorno exitoso
-                    } else {
-                        Toast.makeText(this@RegistrarCultivoActivity, "⚠️ Error en API: Cód ${response.code}", Toast.LENGTH_SHORT).show()
-                    }
+    // 🚀 ENVÍO DE DATOS OPTIMIZADO CON RETROFIT (Ya no construye JSONs manuales en String)
+    private fun ejecutarRegistroDeCultivo() {
+        // Empaquetamos los datos de forma segura previniendo excepciones de casteo de texto a float
+        val nuevoCultivo = CultivoRegistro(
+            nombre_verdura = etNombreVerdura.text.toString().trim(),
+            temp_min = etTempMin.text.toString().toFloatOrNull() ?: 0f,
+            temp_max = etTempMax.text.toString().toFloatOrNull() ?: 0f,
+            hum_min = etHumMin.text.toString().toFloatOrNull() ?: 0f,
+            hum_max = etHumMax.text.toString().toFloatOrNull() ?: 0f,
+            ph_min = etPhMin.text.toString().toFloatOrNull() ?: 0f,
+            ph_max = etPhMax.text.toString().toFloatOrNull() ?: 0f,
+            luz_min = etLuzMin.text.toString().toFloatOrNull() ?: 0f,
+            luz_max = etLuzMax.text.toString().toFloatOrNull() ?: 0f
+        )
+
+        // Lanzamos la corrutina utilizando el ciclo de vida nativo de la Actividad (Evita fugas de memoria)
+        lifecycleScope.launch {
+            try {
+                // Ejecutamos la petición HTTP en el hilo de fondo (Dispatchers.IO) utilizando RetrofitClient
+                val response = withContext(Dispatchers.IO) {
+                    RetrofitClient.getApiService(tokenJwt).registrarCultivo(nuevoCultivo)
                 }
-            }
-        } catch (e: Exception) {
-            withContext(Dispatchers.Main) {
-                Toast.makeText(this@RegistrarCultivoActivity, "❌ Falla de red: No se conectó al backend", Toast.LENGTH_LONG).show()
+
+                if (response.isSuccessful) {
+                    Toast.makeText(this@RegistrarCultivoActivity, "🌱 Cultivo guardado e indexado", Toast.LENGTH_LONG).show()
+                    finish() // Retorno exitoso a la pantalla principal
+                } else {
+                    val errorMsg = response.errorBody()?.string() ?: "Error de validación en la API"
+                    Toast.makeText(this@RegistrarCultivoActivity, "⚠️ Error en API: $errorMsg", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(this@RegistrarCultivoActivity, "❌ Falla de red: No se pudo conectar al backend", Toast.LENGTH_LONG).show()
             }
         }
+    }
+
+    // =============================================================================
+    // VALIDACIÓN PREDICTIVA COHERENTE (Local)
+    // =============================================================================
+    inner class FieldValidator : TextWatcher {
+        override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+        override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+            val nombre = etNombreVerdura.text.toString().trim()
+
+            val tMin = etTempMin.text.toString().toFloatOrNull()
+            val tMax = etTempMax.text.toString().toFloatOrNull()
+            val hMin = etHumMin.text.toString().toFloatOrNull()
+            val hMax = etHumMax.text.toString().toFloatOrNull()
+            val pMin = etPhMin.text.toString().toFloatOrNull()
+            val pMax = etPhMax.text.toString().toFloatOrNull()
+            val lMin = etLuzMin.text.toString().toFloatOrNull()
+            val lMax = etLuzMax.text.toString().toFloatOrNull()
+
+            // Evaluación lógica de consistencia analítica
+            val nombreValido = nombre.isNotEmpty()
+            val tempValida = tMin != null && tMax != null && tMin < tMax
+            val humValida = hMin != null && hMax != null && hMin < hMax
+            val phValido = pMin != null && pMax != null && pMin < pMax
+            val luzValida = lMin != null && lMax != null && lMin < lMax
+
+            // Inyección visual de advertencias directas en la caja de texto
+            if (tMin != null && tMax != null && tMin >= tMax) etTempMin.error = "El mínimo debe ser menor al máximo"
+            if (hMin != null && hMax != null && hMin >= hMax) etHumMin.error = "El mínimo debe ser menor al máximo"
+            if (pMin != null && pMax != null && pMin >= pMax) etPhMin.error = "El mínimo debe ser menor al máximo"
+            if (lMin != null && lMax != null && lMin >= lMax) etLuzMin.error = "El mínimo debe ser menor al máximo"
+
+            // El botón se habilita de forma automatizada únicamente si los datos son coherentes
+            btnGuardar.isEnabled = nombreValido && tempValida && humValida && phValido && luzValida
+        }
+        override fun afterTextChanged(s: Editable?) {}
     }
 }
