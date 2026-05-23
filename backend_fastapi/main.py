@@ -15,7 +15,7 @@ SECRET_KEY = "SISTEMAS_AUDITORIA_BOLIVIA_SECURE_KEY"
 ALGORITHM = "HS256"
 
 # --- CONEXIÓN CASSANDRA ---
-cluster = Cluster(['192.168.2.108'])
+cluster = Cluster(['172.18.0.2'])
 session = cluster.connect('hidroponia_pro')
 
 # --- MODELOS ---
@@ -31,17 +31,6 @@ class UsuarioLogin(BaseModel):
 
 class CultivoRegistro(BaseModel):
     id_cultivo: Optional[str] = None
-    nombre_verdura: str
-    temp_min: float
-    temp_max: float
-    hum_min: float
-    hum_max: float
-    ph_min: float
-    ph_max: float
-    luz_min: float
-    luz_max: float
-
-class CultivoEdicion(BaseModel):
     nombre_verdura: str
     temp_min: float
     temp_max: float
@@ -70,25 +59,44 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 
+# --- TAREA DE FONDO PARA CASSANDRA (NO BLOQUEANTE) ---
+async def guardar_datos_async(payload, estados):
+    try:
+        query_insert = """INSERT INTO lecturas_sensores (origen, fecha_hora, temperatura, humedad, ph, luz, act_temp, act_hum, act_ph, act_luz)
+        VALUES (%s, toTimestamp(now()), %s, %s, %s, %s, %s, %s, %s, %s)"""
+        
+        await asyncio.to_thread(session.execute, query_insert, 
+            ("SIMULADOR_ANDROID", float(payload['temp']), float(payload['hum']), float(payload['ph']), float(payload['luz']), estados['temp'], estados['hum'], estados['ph'], estados['luz']))
+    except Exception as e:
+        # Esto imprime el error si algo falla, pero NO detiene el WebSocket
+        print(f"DEBUG: Aviso de persistencia (ignorable): {e}")
+
 # --- LÓGICA DE CONTROL (LAZO CERRADO) ---
 def calcular_bits_estado(payload, cultivo):
-    # Lógica: 100=ROJO(Exceso), 001=AZUL(Déficit), 010=VERDE(Óptimo)
-    def obtener_bit(valor, min_val, max_val):
-        if valor > max_val: return "100"
-        if valor < min_val: return "001"
-        return "010"
+    def obtener_estado(valor, min_val, max_val):
+        # 1. Punto objetivo (Setpoint)
+        
+        mid = (min_val + max_val) / 2
+        # 2. Banda muerta (5% del rango, asegurando que sea al menos un valor mínimo)
+        tolerancia = max((max_val - min_val) * 0.08, 0.1) 
+        
+        if abs(valor - mid) <= tolerancia:
+            return "010" # VERDE
+        elif valor < mid:
+            return "001" # AZUL (Aumentar)
+        else:
+            return "100" # ROJO (Disminuir)
 
-    t = obtener_bit(payload.get('temp', 0), cultivo.temp_min, cultivo.temp_max)
-    h = obtener_bit(payload.get('hum', 0), cultivo.hum_min, cultivo.hum_max)
-    p = obtener_bit(payload.get('ph', 0), cultivo.ph_min, cultivo.ph_max)
-    l = obtener_bit(payload.get('luz', 0), cultivo.luz_min, cultivo.luz_max)
+    # Convertimos los valores del payload a float para comparar con el esquema
+    t = obtener_estado(float(payload.get('temp', 0)), cultivo.temp_min, cultivo.temp_max)
+    h = obtener_estado(float(payload.get('hum', 0)), cultivo.hum_min, cultivo.hum_max)
+    p = obtener_estado(float(payload.get('ph', 0)), cultivo.ph_min, cultivo.ph_max)
+    l = obtener_estado(float(payload.get('luz', 0)), cultivo.luz_min, cultivo.luz_max)
     return t + h + p + l
 
 def verificar_token_ws(token: str):
-    try:
-        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM]).get("sub")
-    except:
-        return None
+    try: return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM]).get("sub")
+    except: return None
 
 # --- ENDPOINTS ---
 @app.post("/api/usuarios/registrar", status_code=201)
@@ -121,38 +129,48 @@ async def listar_cultivos():
     return {"cultivos": [{"id_cultivo": row.id_cultivo, "nombre_verdura": row.nombre_verdura} for row in rows]}
 
 # --- WEBSOCKET (CONTROLADOR ACTIVO) ---
-# --- WEBSOCKET (CONTROLADOR ACTIVO - REFORZADO) ---
 @app.websocket("/ws/invernadero/{id_cultivo}")
 async def websocket_endpoint(websocket: WebSocket, id_cultivo: str, token: str = None):
-    # 1. ACEPTAR CONEXIÓN PRIMERO
     await manager.connect(websocket)
-    
-    # 2. VALIDAR
     if not token or not verificar_token_ws(token):
-        print(f"DEBUG: Token inválido o ausente para {id_cultivo}")
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        return
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION); return
     
-    # 3. BUSCAR CULTIVO
     res = await asyncio.to_thread(session.execute, "SELECT * FROM config_cultivos WHERE id_cultivo = %s", (id_cultivo,))
     cultivo = res.one()
-    
-    if not cultivo:
-        print(f"DEBUG: Cultivo {id_cultivo} no encontrado en DB")
-        await websocket.close()
-        return
-
-    print(f"DEBUG: Conexión WebSocket establecida para {id_cultivo}")
+    if not cultivo: await websocket.close(); return
 
     try:
         while True:
             data = await websocket.receive_text()
-            payload = json.loads(data)
-            comando_bits = calcular_bits_estado(payload, cultivo)
-            await manager.send_personal_message(comando_bits, websocket)
+            print(f"DEBUG: Datos recibidos: {data}")
+            try:
+                payload = json.loads(data)
+                if not all(field in payload for field in ['temp', 'hum', 'ph', 'luz']): continue
+
+                comando_bits = calcular_bits_estado(payload, cultivo)
+                c = [comando_bits[i:i+3] for i in range(0, 12, 3)]
+                estados = {
+                    "temp": "VERDE" if c[0] == "010" else ("ROJO" if c[0] == "100" else "AZUL"),
+                    "hum": "VERDE" if c[1] == "010" else ("ROJO" if c[1] == "100" else "AZUL"),
+                    "ph": "VERDE" if c[2] == "010" else ("ROJO" if c[2] == "100" else "AZUL"),
+                    "luz": "VERDE" if c[3] == "010" else ("ROJO" if c[3] == "100" else "AZUL")
+                }
+
+                # TAREA ASÍNCRONA: No usamos 'await' aquí para que el WebSocket no se bloquee
+                asyncio.create_task(guardar_datos_async(payload, estados))
+
+                respuesta = {
+                    "txt_verdura": cultivo.nombre_verdura,
+                    "txt_rangos": f"T:{cultivo.temp_min}-{cultivo.temp_max} | H:{cultivo.hum_min}-{cultivo.hum_max} | pH:{cultivo.ph_min}-{cultivo.ph_max} | L:{cultivo.luz_min}-{cultivo.luz_max}",
+                    "actuador_temp": estados['temp'], "actuador_hum": estados['hum'],
+                    "actuador_ph": estados['ph'], "actuador_luz": estados['luz']
+                }
+                
+                await manager.send_personal_message(json.dumps(respuesta), websocket)
+            except Exception as e:
+                continue
     except WebSocketDisconnect:
         manager.disconnect(websocket)
-        print("DEBUG: Cliente desconectado")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

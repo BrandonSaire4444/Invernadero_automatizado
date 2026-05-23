@@ -1,6 +1,5 @@
 package com.paulquispe.hidroponiapro
 
-import android.widget.ImageButton
 import android.content.Context
 import android.content.Intent
 import android.content.res.ColorStateList
@@ -9,12 +8,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.View
-import android.widget.AdapterView
-import android.widget.ArrayAdapter
-import android.widget.Button
-import android.widget.SeekBar
-import android.widget.Spinner
-import android.widget.TextView
+import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
@@ -26,14 +20,16 @@ import java.util.concurrent.TimeUnit
 
 @Suppress("SetTextI18n")
 class MainActivity : AppCompatActivity() {
-    private val client = OkHttpClient.Builder()
-        .readTimeout(30, TimeUnit.SECONDS)
-        .build()
-
+    private val client = OkHttpClient.Builder().readTimeout(30, TimeUnit.SECONDS).build()
+    // IMPORTANTE: Cambia "127.0.0.1" por la IP local de tu PC si pruebas en un celular real
     private val baseWebSocketUrl = "ws://127.0.0.1:8000/ws/invernadero"
+
     private var idCultivo: String = "lechuga"
     private var tokenJwt: String = ""
     private var mapaCultivos: Map<String, String> = emptyMap()
+
+    // Variable para controlar que la inercia solo inicie tras recibir datos
+    private var datosRecibidos = false
 
     private lateinit var txtNombreVerdura: TextView
     private lateinit var txtRangosOptimos: TextView
@@ -65,10 +61,7 @@ class MainActivity : AppCompatActivity() {
     private var estadoActLuz = "VERDE"
 
     private var webSocket: WebSocket? = null
-    private val handlerTransmision = Handler(Looper.getMainLooper())
     private val handlerInerciaFisica = Handler(Looper.getMainLooper())
-
-    private val intervaloTransmision = 3000L
     private val intervaloFisica = 1000L
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -79,7 +72,7 @@ class MainActivity : AppCompatActivity() {
         tokenJwt = sharedPref.getString("JWT_TOKEN", "") ?: ""
 
         inicializarVistas()
-        bloquearSeekBars()
+        // NOTA: No llamamos a bloquearSeekBars() para permitir interacción
         configurarBotonesPerturbacion()
         configurarBotonesNavegacion()
 
@@ -107,11 +100,6 @@ class MainActivity : AppCompatActivity() {
         seekPH = findViewById(R.id.seekPH); seekLuz = findViewById(R.id.seekLuz)
     }
 
-    private fun bloquearSeekBars() {
-        seekTemperatura.isEnabled = false; seekHumedad.isEnabled = false
-        seekPH.isEnabled = false; seekLuz.isEnabled = false
-    }
-
     private fun configurarBotonesPerturbacion() {
         findViewById<Button>(R.id.btnTempMas).setOnClickListener { perturbarSensor(seekTemperatura, 2, true) }
         findViewById<Button>(R.id.btnTempMenos).setOnClickListener { perturbarSensor(seekTemperatura, 2, false) }
@@ -124,21 +112,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun configurarBotonesNavegacion() {
-        // AQUÍ ES DONDE ESTABA EL ERROR: Cambiar Button por ImageButton
         findViewById<ImageButton>(R.id.btnRegistrarPlanta).setOnClickListener {
-            val intent = Intent(this, RegistrarCultivoActivity::class.java)
-            startActivity(intent)
+            startActivity(Intent(this, RegistrarCultivoActivity::class.java))
         }
-
         findViewById<ImageButton>(R.id.btnCerrarSesion).setOnClickListener {
-            val sharedPref = getSharedPreferences("AUTH_PREFS", Context.MODE_PRIVATE)
-            sharedPref.edit().remove("JWT_TOKEN").apply()
-
-            webSocket?.close(1000, "Cierre voluntario")
+            getSharedPreferences("AUTH_PREFS", Context.MODE_PRIVATE).edit().remove("JWT_TOKEN").apply()
+            webSocket?.close(1000, "Cierre")
             val intent = Intent(this, LoginActivity::class.java)
             intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-            startActivity(intent)
-            finish()
+            startActivity(intent); finish()
         }
     }
 
@@ -148,85 +130,108 @@ class MainActivity : AppCompatActivity() {
                 val api = RetrofitClient.getApiService(tokenJwt)
                 val res = withContext(Dispatchers.IO) { api.listarCultivos() }
                 if (res.isSuccessful && res.body() != null) {
-                    // Creamos un mapa: Nombre (UI) -> ID (BD)
                     mapaCultivos = res.body()!!.cultivos.associate { it.nombre_verdura to it.id_cultivo }
-                    configurarSpinner(res.body()!!.cultivos.map { it.nombre_verdura })
+                    val adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_item, res.body()!!.cultivos.map { it.nombre_verdura })
+                    spinnerCultivos.adapter = adapter
+                    spinnerCultivos.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                        override fun onItemSelected(p0: AdapterView<*>?, p1: View?, pos: Int, id: Long) {
+                            val nuevoId = mapaCultivos[spinnerCultivos.getItemAtPosition(pos).toString()] ?: "lechuga"
+
+                            if (idCultivo != nuevoId) { // Solo actuar si realmente cambió
+                                idCultivo = nuevoId
+                                datosRecibidos = false
+                                webSocket?.close(1000, "Cambio")
+                                conectarAlWebSocketIntegrado()
+
+                                // --- AQUÍ ESTÁ LA CLAVE ---
+                                // Enviamos un "ping" o estado nulo para que el servidor responda inmediatamente
+                                // con los nuevos rangos y estados para el nuevo cultivo.
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    enviarDatosInstantaneos()
+                                }, 500) // Espera 500ms a que conecte el WS
+                            }
+                        }
+                        override fun onNothingSelected(p0: AdapterView<*>?) {}
+                    }
                 }
             } catch (e: Exception) { txtEstadoConexion.text = "Error cargando lista" }
         }
     }
 
-    private fun configurarSpinner(nombres: List<String>) {
-        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, nombres)
-        spinnerCultivos.adapter = adapter
-        spinnerCultivos.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(p0: AdapterView<*>?, p1: View?, pos: Int, id: Long) {
-                val nombreSeleccionado = nombres[pos]
-                // Obtenemos el ID real desde el mapa
-                idCultivo = mapaCultivos[nombreSeleccionado] ?: nombreSeleccionado.lowercase()
-
-                txtNombreVerdura.text = "🌱 Conectando a $nombreSeleccionado (ID: $idCultivo)..."
-
-                handlerTransmision.removeCallbacksAndMessages(null)
-                webSocket?.close(1000, "Cambio")
-                conectarAlWebSocketIntegrado()
-            }
-            override fun onNothingSelected(p0: AdapterView<*>?) {}
-        }
-    }
-
     private fun conectarAlWebSocketIntegrado() {
-        val urlCompleta = "$baseWebSocketUrl/$idCultivo?token=$tokenJwt"
-        val request = Request.Builder().url(urlCompleta).build()
-
-        // Usamos el Listener directo para tener control total del evento 'onOpen'
-        webSocket = client.newWebSocket(request, object : WebSocketListener() {
-            override fun onOpen(webSocket: WebSocket, response: Response) {
-                runOnUiThread { txtEstadoConexion.text = "✅ Conectado" }
-                // IMPORTANTE: Enviar datos justo al abrir para mantener la sesión activa
-                enviarDatosInstantaneos()
-            }
-
-            override fun onMessage(webSocket: WebSocket, text: String) {
-                procesarComandoOJsonScada(text)
-            }
-
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                runOnUiThread { txtEstadoConexion.text = "❌ Error: ${t.message}" }
-            }
+        webSocket = client.newWebSocket(Request.Builder().url("$baseWebSocketUrl/$idCultivo?token=$tokenJwt").build(), object : WebSocketListener() {
+            override fun onOpen(ws: WebSocket, r: Response) { runOnUiThread { txtEstadoConexion.text = "✅ Conectado" } }
+            override fun onMessage(ws: WebSocket, text: String) { procesarComandoOJsonScada(text) }
+            override fun onFailure(ws: WebSocket, t: Throwable, r: Response?) { runOnUiThread { txtEstadoConexion.text = "❌ Error" } }
         })
     }
 
     private fun procesarComandoOJsonScada(texto: String) {
         runOnUiThread {
             try {
-                if (texto.length == 12 && !texto.contains("{")) {
-                    val c = texto.chunked(3)
-                    estadoActTemp = cuandoBit(c[0]); estadoActHum = cuandoBit(c[1])
-                    estadoActPh = cuandoBit(c[2]); estadoActLuz = cuandoBit(c[3])
-                } else {
-                    val j = JSONObject(texto)
-                    txtNombreVerdura.text = "🌱 ${j.optString("txt_verdura", "Cultivo Activo")}"
-                    txtRangosOptimos.text = j.optString("txt_rangos", "Sincronizado")
-                    estadoActTemp = j.optString("actuador_temp", "VERDE")
-                    estadoActHum = j.optString("actuador_hum", "VERDE")
-                    estadoActPh = j.optString("actuador_ph", "VERDE")
-                    estadoActLuz = j.optString("actuador_luz", "VERDE")
-                }
-                actualizarLedSCADA(ledTemperatura, txtActuadorTemperatura, "Extractor", estadoActTemp)
-                actualizarLedSCADA(ledHumedad, txtActuadorHumedad, "Bomba", estadoActHum)
+                val j = JSONObject(texto)
+                txtNombreVerdura.text = "🌱 ${j.optString("txt_verdura")}"
+                txtRangosOptimos.text = j.optString("txt_rangos")
+                estadoActTemp = j.optString("actuador_temp", "VERDE")
+                estadoActHum = j.optString("actuador_hum", "VERDE")
+                estadoActPh = j.optString("actuador_ph", "VERDE")
+                estadoActLuz = j.optString("actuador_luz", "VERDE")
+
+                actualizarLedSCADA(ledTemperatura, txtActuadorTemperatura, "Temp", estadoActTemp)
+                actualizarLedSCADA(ledHumedad, txtActuadorHumedad, "Hum", estadoActHum)
                 actualizarLedSCADA(ledPH, txtActuadorPH, "pH", estadoActPh)
                 actualizarLedSCADA(ledLuz, txtActuadorLuz, "Luz", estadoActLuz)
-            } catch (e: Exception) { txtEstadoConexion.text = "Error de sincronización" }
+
+                datosRecibidos = true // Ahora permitimos que la inercia funcione
+            } catch (e: Exception) {}
         }
     }
-
-    private fun cuandoBit(b: String) = when(b) { "010" -> "VERDE"; "100" -> "ROJO"; "001" -> "AZUL"; else -> "VERDE" }
 
     private fun actualizarLedSCADA(v: View, t: TextView, n: String, s: String) {
         val c = if (s == "ROJO") "#EF4444" else if (s == "AZUL") "#3B82F6" else "#10B981"
         v.backgroundTintList = ColorStateList.valueOf(Color.parseColor(c))
-        t.text = "$n: ${if (s == "VERDE") "APAGADO" else "ACTIVO"} ($s)"
+        t.text = "$n: ${if (s == "VERDE") "OFF" else "ON"} ($s)"
+    }
+
+    private fun iniciarLoopFisicaEntorno() {
+        handlerInerciaFisica.post(object : Runnable {
+            override fun run() {
+                if (datosRecibidos) {
+                    var huboCambio = false
+
+                    // Lógica inteligente: solo ajusta si el estado es distinto a VERDE
+                    fun calcularAjuste(valor: Int, estado: String, factor: Int): Int {
+                        if (estado == "VERDE") return valor
+                        val direccion = if (estado == "ROJO") -1 else 1
+                        return (valor + (direccion * factor)).coerceIn(0, 1000)
+                    }
+
+                    // Aplicamos los ajustes (Manteniendo tus factores de sensibilidad)
+                    val nuevaTemp = calcularAjuste(seekTemperatura.progress, estadoActTemp, 1)
+                    val nuevaHum = calcularAjuste(seekHumedad.progress, estadoActHum, 1)
+                    val nuevoPH = calcularAjuste(seekPH.progress, estadoActPh, 1)
+                    val nuevaLuz = calcularAjuste(seekLuz.progress, estadoActLuz, 10)
+
+                    // Verificamos si hubo cambios para evitar enviar basura al servidor
+                    if (nuevaTemp != seekTemperatura.progress || nuevaHum != seekHumedad.progress ||
+                        nuevoPH != seekPH.progress || nuevaLuz != seekLuz.progress) {
+
+                        seekTemperatura.progress = nuevaTemp
+                        seekHumedad.progress = nuevaHum
+                        seekPH.progress = nuevoPH
+                        seekLuz.progress = nuevaLuz
+
+                        huboCambio = true
+                    }
+
+                    if (huboCambio) {
+                        actualizarDisplaysGraficos()
+                        enviarDatosInstantaneos()
+                    }
+                }
+                handlerInerciaFisica.postDelayed(this, 500L)
+            }
+        })
     }
 
     private fun perturbarSensor(s: SeekBar, d: Int, i: Boolean) {
@@ -241,40 +246,18 @@ class MainActivity : AppCompatActivity() {
         txtLabelLuz.text = "Luminosidad: ${seekLuz.progress} Lux"
     }
 
-    // ... (resto de tu código arriba)
-
-    private fun iniciarLoopFisicaEntorno() {
-        handlerInerciaFisica.post(object : Runnable {
-            override fun run() {
-                if (estadoActTemp == "ROJO") seekTemperatura.progress -= 1
-                else if (estadoActTemp == "AZUL") seekTemperatura.progress += 1
-                actualizarDisplaysGraficos()
-                handlerInerciaFisica.postDelayed(this, intervaloFisica)
-            }
-        })
-    }
-
-    // ÚNICA DECLARACIÓN DE LA FUNCIÓN
     private fun enviarDatosInstantaneos() {
         try {
-            val j = JSONObject().apply {
-                put("temp", seekTemperatura.progress)
-                put("hum", seekHumedad.progress)
-                put("ph", seekPH.progress)
-                put("luz", seekLuz.progress)
-                put("id_cultivo", idCultivo)
-            }
-            if (webSocket == null) return
-            webSocket?.send(    j.toString())
-        } catch (e: Exception) {
-            android.util.Log.e("WEBSOCKET_SEND", "Error enviando datos: ${e.message}")
-        }
+            webSocket?.send(JSONObject().apply {
+                put("temp", seekTemperatura.progress); put("hum", seekHumedad.progress)
+                put("ph", seekPH.progress / 10.0f); put("luz", seekLuz.progress); put("id_cultivo", idCultivo)
+            }.toString())
+        } catch (e: Exception) {}
     }
 
     override fun onDestroy() {
         super.onDestroy()
         webSocket?.close(1000, "Cierre")
-        handlerTransmision.removeCallbacksAndMessages(null)
         handlerInerciaFisica.removeCallbacksAndMessages(null)
     }
 }
