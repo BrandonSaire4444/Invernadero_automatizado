@@ -108,6 +108,7 @@ class RegistrarCultivoActivity : AppCompatActivity() {
 
                 if (response.isSuccessful) {
                     Toast.makeText(this@RegistrarCultivoActivity, "🌱 Cultivo guardado e indexado", Toast.LENGTH_LONG).show()
+                    setResult(RESULT_OK)
                     finish() // Retorno exitoso a la pantalla principal
                 } else {
                     val errorMsg = response.errorBody()?.string() ?: "Error de validación en la API"

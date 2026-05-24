@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit
 object RetrofitClient {
     // IMPORTANTE: Asegúrate de que esta URL sea accesible desde el emulador/dispositivo.
     // Si usas el emulador, "10.0.2.2" suele apuntar a localhost de tu PC.
-    private const val BASE_URL = "http://127.0.0.1:8000/"
+    private const val BASE_URL = "http://192.168.2.108:8000/"
 
     // Reutilizamos el cliente base para evitar crear múltiples conexiones innecesarias
     private val baseClient = OkHttpClient.Builder()

@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit
 class MainActivity : AppCompatActivity() {
     private val client = OkHttpClient.Builder().readTimeout(30, TimeUnit.SECONDS).build()
     // IMPORTANTE: Cambia "127.0.0.1" por la IP local de tu PC si pruebas en un celular real
-    private val baseWebSocketUrl = "ws://127.0.0.1:8000/ws/invernadero"
+    private val baseWebSocketUrl = "ws://192.168.2.108:8000/ws/invernadero"
 
     private var idCultivo: String = "lechuga"
     private var tokenJwt: String = ""
@@ -110,11 +110,23 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnLuzMas).setOnClickListener { perturbarSensor(seekLuz, 20, true) }
         findViewById<Button>(R.id.btnLuzMenos).setOnClickListener { perturbarSensor(seekLuz, 20, false) }
     }
+    private val registrarLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        // Si el registro fue exitoso (RESULT_OK), refrescamos la lista
+        if (result.resultCode == RESULT_OK) {
+            cargarCultivosDesdeRetrofit()
+        }
+    }
 
     private fun configurarBotonesNavegacion() {
+        // 1. Usamos el 'registrarLauncher' que definimos antes
         findViewById<ImageButton>(R.id.btnRegistrarPlanta).setOnClickListener {
-            startActivity(Intent(this, RegistrarCultivoActivity::class.java))
+            val intent = Intent(this, RegistrarCultivoActivity::class.java)
+            registrarLauncher.launch(intent)
         }
+
+        // 2. Mantienes tu lógica de cierre de sesión
         findViewById<ImageButton>(R.id.btnCerrarSesion).setOnClickListener {
             getSharedPreferences("AUTH_PREFS", Context.MODE_PRIVATE).edit().remove("JWT_TOKEN").apply()
             webSocket?.close(1000, "Cierre")

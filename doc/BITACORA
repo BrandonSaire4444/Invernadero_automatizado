@@ -1,0 +1,49 @@
+
+1. El ESP32 es un "Esclavo de Estado" (State Slave)
+
+El ESP32 nunca debe decidir por sí mismo qué cultivo está activo. Su única función debe ser mantener una variable cultivoActual que sea sobrescribible desde el servidor.
+
+    Regla: El botón en el ESP32 no debe cambiar el cultivo directamente; debe enviar un trigger al servidor (/cambiar_cultivo). El servidor consulta Cassandra, decide cuál es el siguiente, y le responde al ESP32 con la nueva configuración.
+
+    Ventaja: Si la App cambia el cultivo, el servidor le envía el mismo comando al ESP32. Así, ambos están siempre sincronizados.
+
+2. Implementar "Latido de Estado" (State Heartbeat)
+
+Para evitar que la App y el ESP32 "peleen" por el control, el ESP32 debe tener un modo de funcionamiento:
+
+    Modo Local: El ESP32 opera con los últimos parámetros recibidos (si se cae el WiFi, sigue operando con los últimos datos de Cassandra).
+
+    Modo Remoto (App): Cuando mueves un slider en la App, el servidor envía un JSON al ESP32. El ESP32 debe bloquear sus potenciómetros temporalmente o sobreescribir sus valores con los del servidor.
+
+3. El Servidor como "Árbitro" (Broker)
+
+Tu main.py debe ser el único que tiene la lógica de negocio.
+
+    Pauta: Cuando el ESP32 envíe datos, el servidor los guarda en Cassandra. Si la App cambia un valor, el servidor envía un comando WebSocket al ESP32.
+
+    Conflicto: Si presionas el botón físico al mismo tiempo que la App, el servidor debe tener un "Time-stamp" (marca de tiempo). El último comando recibido gana.
+
+Arquitectura sugerida para resolver el conflicto:
+Pautas técnicas para el código:
+
+    En el ESP32:
+
+        No uses cultivoActual = (condicion) ? &tomate : &lechuga;.
+
+        Usa una función void actualizarConfiguracion(String json) que reciba los parámetros desde el servidor y sobrescriba tu estructura cultivoActual.
+
+    En el Servidor (main.py):
+
+        Crea una ruta /cambio_fisico que sea llamada por el ESP32 cuando se presione el botón.
+
+        Cuando se presione, el servidor consulta la base de datos, determina el siguiente cultivo y envía un comando al ESP32.
+
+    Sincronización:
+
+        Al encenderse, el ESP32 debe hacer una petición GET /config_actual al servidor para que el servidor le diga qué cultivo debe estar activo. Nunca asumas un estado por defecto en el código del ESP32.
+
+¿Por qué esto elimina tu conflicto?
+
+Porque eliminas la "autonomía" de decisión del ESP32. El ESP32 se convierte en un terminal tonto (dumb terminal) que reporta lo que siente y ejecuta lo que el servidor le dicta.
+
+¿Quieres que modifiquemos la estructura de datos en tu main.py para que sea el Servidor quien tenga la lista de cultivos y el ESP32 solo reciba la orden de "Cargar cultivo X"? Esto hará que tu código sea mucho más limpio y fácil de mantener.

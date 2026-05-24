@@ -1,0 +1,116 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+// --- ESTRUCTURA (ESPEJO DE BD: config_cultivos) ---
+struct ConfigCultivo {
+  String id_cultivo;
+  String nombre_verdura;
+  float temp_min, temp_max;
+  float hum_min, hum_max;
+  float ph_min, ph_max;
+  float luz_min, luz_max;
+};
+
+// Instancias configuradaslo mismo
+ConfigCultivo lechuga = {"lechuga_01", "Lechuga", 15.0, 25.0, 60.0, 80.0, 5.5, 6.5, 300.0, 800.0};
+ConfigCultivo tomate  = {"tomate_01",  "Tomate",  18.0, 30.0, 50.0, 70.0, 6.0, 7.0, 500.0, 1000.0};
+ConfigCultivo *cultivoActual = &lechuga;
+
+// --- CONFIGURACIÓN PINES ---
+const int pinesPot[] = {34, 35, 36, 39}; // Temp, Hum, PH, Luz
+const int pinesLed[4][3] = {
+  {13, 12, 14}, // Temp RGB
+  {27, 26, 25}, // Hum RGB
+  {18, 5, 17},  // PH RGB
+  {16, 15, 2}   // Luz RGB
+};
+const int pinBoton = 4; // CONFIRMADO: Pin 4
+
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// --- VARIABLES DE ESTADO ---
+bool botonAntes = HIGH; // Almacena el estado anterior del botón
+
+// --- FUNCIONES AUXILIARES ---
+String getEstado(float valor, float min, float max) {
+  if (valor < min) return "L";
+  if (valor > max) return "H";
+  return " ";
+}
+
+void aplicarLogica(int idx, float valor, float min, float max) {
+  for(int j=0; j<3; j++) digitalWrite(pinesLed[idx][j], HIGH); // Apagar (Ánodo Común)
+  if (valor < min) digitalWrite(pinesLed[idx][2], LOW);        // Azul
+  else if (valor > max) digitalWrite(pinesLed[idx][0], LOW);   // Rojo
+  else digitalWrite(pinesLed[idx][1], LOW);                    // Verde
+}
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(pinBoton, INPUT_PULLUP);
+  for(int i=0; i<4; i++) {
+    for(int j=0; j<3; j++) {
+      pinMode(pinesLed[i][j], OUTPUT);
+      digitalWrite(pinesLed[i][j], HIGH); 
+    }
+  }
+  lcd.init(); 
+  lcd.backlight();
+  lcd.print("SISTEMA SIG@");
+  delay(1500);
+  lcd.clear();
+}
+
+void loop() {
+  // 1. GESTIÓN BOTÓN
+  bool botonAhora = digitalRead(pinBoton);
+
+  // Detectamos el flanco de bajada (Momento exacto en que bajas el botón)
+  if (botonAntes == HIGH && botonAhora == LOW) {
+    delay(20); // Anti-rebote rápido hardware/software
+    
+    if (digitalRead(pinBoton) == LOW) {
+      // Intercambiar cultivo de inmediato
+      cultivoActual = (cultivoActual == &lechuga) ? &tomate : &lechuga;
+      
+      // Mostrar confirmación instantánea en el LCD
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("CULTIVO CAMBIADO");
+      lcd.setCursor(0, 1);
+      lcd.print(cultivoActual->nombre_verdura);
+      
+      // Forzar una pequeña pausa visual para que alcances a leer qué cultivo seleccionó
+      delay(1200); 
+      lcd.clear();
+    }
+  }
+  botonAntes = botonAhora; // Guardar estado para el próximo ciclo
+
+  // 2. LÓGICA CONSTANTE DE PANTALLA Y LECTURAS (Solo corre si el botón no está presionado)
+  if (botonAhora == HIGH) {
+    // Leer y mapear los sensores
+    float v[4];
+    v[0] = map(analogRead(pinesPot[0]), 0, 4095, 0, 40);   // Temp
+    v[1] = map(analogRead(pinesPot[1]), 0, 4095, 0, 100);  // Hum
+    v[2] = map(analogRead(pinesPot[2]), 0, 4095, 0, 14);   // PH
+    v[3] = map(analogRead(pinesPot[3]), 0, 4095, 0, 1200); // Luz
+
+    // Ejecutar lógica de actuadores (LEDs RGB)
+    aplicarLogica(0, v[0], cultivoActual->temp_min, cultivoActual->temp_max);
+    aplicarLogica(1, v[1], cultivoActual->hum_min,  cultivoActual->hum_max);
+    aplicarLogica(2, v[2], cultivoActual->ph_min,   cultivoActual->ph_max);
+    aplicarLogica(3, v[3], cultivoActual->luz_min,  cultivoActual->luz_max);
+
+    // Actualizar pantalla LCD con las lecturas actuales y el estado de alerta
+    lcd.setCursor(0,0);
+    lcd.print("T:"); lcd.print((int)v[0]); lcd.print(getEstado(v[0], cultivoActual->temp_min, cultivoActual->temp_max));
+    lcd.print(" H:"); lcd.print((int)v[1]); lcd.print(getEstado(v[1], cultivoActual->hum_min, cultivoActual->hum_max));
+    
+    lcd.setCursor(0,1);
+    lcd.print("P:"); lcd.print((int)v[2]); lcd.print(getEstado(v[2], cultivoActual->ph_min, cultivoActual->ph_max));
+    lcd.print(" L:"); lcd.print((int)v[3]); lcd.print(getEstado(v[3], cultivoActual->luz_min, cultivoActual->luz_max));
+  }
+  
+  delay(100); // Estabilidad del bucle principal
+}

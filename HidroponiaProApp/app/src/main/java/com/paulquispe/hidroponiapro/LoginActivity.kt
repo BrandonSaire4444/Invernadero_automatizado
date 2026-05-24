@@ -24,7 +24,7 @@ class LoginActivity : AppCompatActivity() {
     private val client = OkHttpClient()
 
     // Usando IP de red local para comunicación transparente física/emulador
-    private val BASE_URL = "http://127.0.0.1:8000"
+    private val BASE_URL = "http://192.168.2.108:8000"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
