@@ -1,0 +1,15 @@
+# Entorno virtual Python
+env/
+venv/
+.env/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+db.sqlite3
+
+# Flutter
+dashboard_arduino/.dart_tool/
+dashboard_arduino/build/
+dashboard_arduino/.idea/

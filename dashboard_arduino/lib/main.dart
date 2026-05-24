@@ -1,9 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+// ignore: avoid_web_libraries_in_flutter
+import 'dart:html' as html;
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const MyApp());
 }
 
@@ -14,150 +19,115 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: const LoginScreen(), // ← Arranca en Login, no en Dashboard
+      home: const AuthGate(),
     );
   }
 }
 
 // ─────────────────────────────────────
-// PANTALLA DE LOGIN
+// AUTH GATE
 // ─────────────────────────────────────
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+class AuthGate extends StatefulWidget {
+  const AuthGate({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  State<AuthGate> createState() => _AuthGateState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
-  final _userController = TextEditingController();
-  final _passController = TextEditingController();
-  bool _loading = false;
-  String _error = '';
+class _AuthGateState extends State<AuthGate> {
+  @override
+  void initState() {
+    super.initState();
+    _checkSession();
+  }
 
-  // ⚠️ Cambia esta IP por la de tu PC donde corre Django
-  final String djangoUrl = "http://localhost:8000/api/login/";
-  Future<void> _login() async {
-    setState(() {
-      _loading = true;
-      _error = '';
-    });
+  Future<void> _checkSession() async {
+    String? token;
 
-    try {
-      final response = await http.post(
-        Uri.parse(djangoUrl),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'username': _userController.text.trim(),
-          'password': _passController.text.trim(),
-        }),
-      );
+    if (kIsWeb) {
+      // Lee la URL completa del navegador
+      final fullUrl = html.window.location.href;
+      debugPrint('URL actual: $fullUrl');
 
-      final data = jsonDecode(response.body);
-
-      if (data['status'] == 'success') {
-        final token = data['token'];
-
-        // Navega al Dashboard pasando el token
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => Dashboard(token: token)),
-        );
-      } else {
-        setState(() {
-          _error = data['message'] ?? 'Error desconocido';
-        });
+      // Busca el token en la URL — funciona con # y sin #
+      // Ejemplos:
+      //   http://localhost:8080/#/dashboard?token=abc
+      //   http://localhost:8080/?token=abc
+      Uri uri;
+      try {
+        // Intenta parsear la parte después del #
+        final hashIndex = fullUrl.indexOf('#');
+        if (hashIndex != -1) {
+          final afterHash = fullUrl.substring(hashIndex + 1);
+          uri = Uri.parse('http://dummy$afterHash');
+        } else {
+          uri = Uri.parse(fullUrl);
+        }
+        token = uri.queryParameters['token'];
+        debugPrint('Token encontrado en URL: $token');
+      } catch (e) {
+        debugPrint('Error parseando URL: $e');
       }
-    } catch (e) {
-      setState(() {
-        _error = 'No se pudo conectar con el servidor';
-      });
-    } finally {
-      setState(() => _loading = false);
+
+      if (token != null && token.isNotEmpty) {
+        // Guardar token y limpiar URL
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('auth_token', token);
+        html.window.history.replaceState({}, '', '/');
+      }
+    }
+
+    // Si no vino en URL, buscar en storage
+    if (token == null || token.isEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      token = prefs.getString('auth_token');
+      debugPrint('Token desde storage: $token');
+    }
+
+    if (!mounted) return;
+
+    if (token != null && token.isNotEmpty) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => Dashboard(token: token!)),
+      );
+    } else {
+      // Sin token → redirigir al login de Django
+      if (kIsWeb) {
+        html.window.location.href = 'http://172.20.10.10:8000/login/';
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return const Scaffold(
       backgroundColor: Colors.black,
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Invernadero',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 40),
-              TextField(
-                controller: _userController,
-                style: const TextStyle(color: Colors.white),
-                decoration: _inputDecoration('Usuario'),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _passController,
-                obscureText: true,
-                style: const TextStyle(color: Colors.white),
-                decoration: _inputDecoration('Contraseña'),
-              ),
-              const SizedBox(height: 24),
-              if (_error.isNotEmpty)
-                Text(_error, style: const TextStyle(color: Colors.redAccent)),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _loading ? null : _login,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: _loading
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text(
-                          'Entrar',
-                          style: TextStyle(fontSize: 16, color: Colors.white),
-                        ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  InputDecoration _inputDecoration(String label) {
-    return InputDecoration(
-      labelText: label,
-      labelStyle: const TextStyle(color: Colors.white70),
-      filled: true,
-      fillColor: Colors.grey[900],
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Colors.white24),
-      ),
+      body: Center(child: CircularProgressIndicator(color: Colors.green)),
     );
   }
 }
 
 // ─────────────────────────────────────
-// DASHBOARD (ya lo tenías, solo se agrega el token)
+// SERVICIO DE AUTENTICACIÓN
+// ─────────────────────────────────────
+class AuthService {
+  static Future<void> logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('auth_token');
+  }
+
+  static Future<String?> getToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('auth_token');
+  }
+}
+
+// ─────────────────────────────────────
+// DASHBOARD
 // ─────────────────────────────────────
 class Dashboard extends StatefulWidget {
-  final String token; // ← recibe el token del login
+  final String token;
   const Dashboard({super.key, required this.token});
 
   @override
@@ -172,13 +142,12 @@ class _DashboardState extends State<Dashboard> {
   bool luces = false;
   Timer? timer;
 
-  // ⚠️ Cambia esta IP por la de tu ESP32/Arduino (ya la tenías)
   final String urlBase = "http://172.20.10.2";
 
   @override
   void initState() {
     super.initState();
-    timer = Timer.periodic(const Duration(seconds: 3), (timer) {
+    timer = Timer.periodic(const Duration(seconds: 3), (_) {
       obtenerDatos();
     });
   }
@@ -203,7 +172,7 @@ class _DashboardState extends State<Dashboard> {
         }
       }
     } catch (e) {
-      print("Error conexión: $e");
+      debugPrint("Error conexión: $e");
     }
   }
 
@@ -211,7 +180,7 @@ class _DashboardState extends State<Dashboard> {
     try {
       await http.get(Uri.parse("$urlBase/$comando"));
     } catch (e) {
-      print("Error enviando comando");
+      debugPrint("Error enviando comando");
     }
   }
 
@@ -230,13 +199,12 @@ class _DashboardState extends State<Dashboard> {
     enviarComando(luces ? "luz_on" : "luz_off");
   }
 
-  // Cerrar sesión → regresa al Login
-  void _logout() {
+  Future<void> _logout() async {
     timer?.cancel();
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-    );
+    await AuthService.logout();
+    if (kIsWeb) {
+      html.window.location.href = 'http://172.20.10.10:8000/login/';
+    }
   }
 
   Widget tarjetaSensor(
@@ -263,7 +231,7 @@ class _DashboardState extends State<Dashboard> {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(20),
                 gradient: LinearGradient(
-                  colors: [color.withOpacity(0.2), color],
+                  colors: [color.withValues(alpha: 0.2), color],
                   begin: Alignment.bottomCenter,
                   end: Alignment.topCenter,
                 ),
@@ -328,7 +296,7 @@ class _DashboardState extends State<Dashboard> {
         actions: [
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.white),
-            onPressed: _logout, // ← botón de cerrar sesión
+            onPressed: _logout,
             tooltip: 'Cerrar sesión',
           ),
         ],
