@@ -1,3 +1,23 @@
 backend_fastapi/venv/
 __pycache__/
 *.pyc
+# Gradle
+.gradle/
+build/
+app/build/
+.gradle/configuration-cache/
+
+# Android Studio
+.idea/
+*.iml
+*.iws
+
+# Sistema
+.DS_Store
+*.swp
+# Logs de ejecución
+*.log
+
+# Archivos de configuración local (donde podrías guardar credenciales de tu DB o API Keys)
+local.properties
+.env

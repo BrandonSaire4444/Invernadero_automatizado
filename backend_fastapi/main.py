@@ -15,7 +15,7 @@ SECRET_KEY = "SISTEMAS_AUDITORIA_BOLIVIA_SECURE_KEY"
 ALGORITHM = "HS256"
 
 # --- CONEXIÓN CASSANDRA ---
-cluster = Cluster(['172.18.0.2'])
+cluster = Cluster(['127.0.0.1'])
 session = cluster.connect('hidroponia_pro')
 
 # --- MODELOS ---
@@ -71,12 +71,19 @@ async def guardar_datos_async(payload, estados, origen="SIMULADOR_ANDROID"):
         print(f"DEBUG: Aviso de persistencia: {e}")
 
 def calcular_estados_y_formatear(payload, cultivo):
+    # Función de utilidad para calcular estados con margen de histéresis
     def obtener_estado(val, min_v, max_v):
         mid = (min_v + max_v) / 2
-        tol = max((max_v - min_v) * 0.20, 0.1)
-        if abs(val - mid) <= tol: return "VERDE"
-        return "AZUL" if val < mid else "ROJO"
+        # Margen del 35% para crear una banda de confort amplia y evitar parpadeos
+        margen = max((max_v - min_v) * 0.25, 0.5)
+        
+        # Si está dentro del margen central, es VERDE (confort)
+        if abs(val - mid) <= margen:
+            return "VERDE"
+        # Si está fuera, decide si es AZUL (bajo) o ROJO (alto)
+        return "AZUL" if val < (mid - margen) else "ROJO"
 
+    # Calculamos cada estado usando la lógica unificada
     estados = {
         "temp": obtener_estado(float(payload['temp']), cultivo.temp_min, cultivo.temp_max),
         "hum": obtener_estado(float(payload['hum']), cultivo.hum_min, cultivo.hum_max),
@@ -84,6 +91,7 @@ def calcular_estados_y_formatear(payload, cultivo):
         "luz": obtener_estado(float(payload['luz']), cultivo.luz_min, cultivo.luz_max)
     }
     return estados
+
 
 # --- ENDPOINTS API ---
 @app.post("/api/esp32/telemetria/{nodo_id}")
@@ -150,11 +158,14 @@ async def listar_cultivos():
 async def websocket_endpoint(websocket: WebSocket, id_cultivo: str, token: str = None):
     await manager.connect(websocket)
     if not token or (jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM]).get("sub") is None):
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION); return
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
     
     res = await asyncio.to_thread(session.execute, "SELECT * FROM config_cultivos WHERE id_cultivo = %s", (id_cultivo,))
     cultivo = res.one()
-    if not cultivo: await websocket.close(); return
+    if not cultivo: 
+        await websocket.close()
+        return
 
     try:
         while True:
@@ -165,12 +176,22 @@ async def websocket_endpoint(websocket: WebSocket, id_cultivo: str, token: str =
             
             respuesta = {
                 "txt_verdura": cultivo.nombre_verdura,
-                "actuador_temp": estados['temp'], "actuador_hum": estados['hum'],
-                "actuador_ph": estados['ph'], "actuador_luz": estados['luz']
+                "actuador_temp": estados['temp'], 
+                "actuador_hum": estados['hum'],
+                "actuador_ph": estados['ph'], 
+                "actuador_luz": estados['luz'],
+                # Límites enviados para centrado dinámico en Android
+                "limites": {
+                    "temp": {"min": float(cultivo.temp_min), "max": float(cultivo.temp_max)},
+                    "hum": {"min": float(cultivo.hum_min), "max": float(cultivo.hum_max)},
+                    "ph": {"min": float(cultivo.ph_min), "max": float(cultivo.ph_max)},
+                    "luz": {"min": float(cultivo.luz_min), "max": float(cultivo.luz_max)}
+                }
             }
             await manager.send_personal_message(json.dumps(respuesta), websocket)
+            
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="192.168.2.108", port=8000)
+    uvicorn.run(app, host="192.168.2.116", port=8000)

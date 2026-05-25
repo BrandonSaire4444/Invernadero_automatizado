@@ -17,18 +17,20 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import okhttp3.*
 import java.util.concurrent.TimeUnit
+import kotlin.math.abs
 
 @Suppress("SetTextI18n")
 class MainActivity : AppCompatActivity() {
     private val client = OkHttpClient.Builder().readTimeout(30, TimeUnit.SECONDS).build()
-    // IMPORTANTE: Cambia "127.0.0.1" por la IP local de tu PC si pruebas en un celular real
-    private val baseWebSocketUrl = "ws://192.168.2.108:8000/ws/invernadero"
+    private val baseWebSocketUrl = "ws://192.168.2.116:8000/ws/invernadero"
 
     private var idCultivo: String = "lechuga"
     private var tokenJwt: String = ""
     private var mapaCultivos: Map<String, String> = emptyMap()
 
-    // Variable para controlar que la inercia solo inicie tras recibir datos
+    // Objeto para almacenar los límites dinámicos
+    private var limitesJson: JSONObject? = null
+
     private var datosRecibidos = false
 
     private lateinit var txtNombreVerdura: TextView
@@ -62,7 +64,6 @@ class MainActivity : AppCompatActivity() {
 
     private var webSocket: WebSocket? = null
     private val handlerInerciaFisica = Handler(Looper.getMainLooper())
-    private val intervaloFisica = 1000L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -72,7 +73,6 @@ class MainActivity : AppCompatActivity() {
         tokenJwt = sharedPref.getString("JWT_TOKEN", "") ?: ""
 
         inicializarVistas()
-        // NOTA: No llamamos a bloquearSeekBars() para permitir interacción
         configurarBotonesPerturbacion()
         configurarBotonesNavegacion()
 
@@ -110,23 +110,20 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnLuzMas).setOnClickListener { perturbarSensor(seekLuz, 20, true) }
         findViewById<Button>(R.id.btnLuzMenos).setOnClickListener { perturbarSensor(seekLuz, 20, false) }
     }
+
     private val registrarLauncher = registerForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        // Si el registro fue exitoso (RESULT_OK), refrescamos la lista
         if (result.resultCode == RESULT_OK) {
             cargarCultivosDesdeRetrofit()
         }
     }
 
     private fun configurarBotonesNavegacion() {
-        // 1. Usamos el 'registrarLauncher' que definimos antes
         findViewById<ImageButton>(R.id.btnRegistrarPlanta).setOnClickListener {
             val intent = Intent(this, RegistrarCultivoActivity::class.java)
             registrarLauncher.launch(intent)
         }
-
-        // 2. Mantienes tu lógica de cierre de sesión
         findViewById<ImageButton>(R.id.btnCerrarSesion).setOnClickListener {
             getSharedPreferences("AUTH_PREFS", Context.MODE_PRIVATE).edit().remove("JWT_TOKEN").apply()
             webSocket?.close(1000, "Cierre")
@@ -148,19 +145,12 @@ class MainActivity : AppCompatActivity() {
                     spinnerCultivos.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                         override fun onItemSelected(p0: AdapterView<*>?, p1: View?, pos: Int, id: Long) {
                             val nuevoId = mapaCultivos[spinnerCultivos.getItemAtPosition(pos).toString()] ?: "lechuga"
-
-                            if (idCultivo != nuevoId) { // Solo actuar si realmente cambió
+                            if (idCultivo != nuevoId) {
                                 idCultivo = nuevoId
                                 datosRecibidos = false
                                 webSocket?.close(1000, "Cambio")
                                 conectarAlWebSocketIntegrado()
-
-                                // --- AQUÍ ESTÁ LA CLAVE ---
-                                // Enviamos un "ping" o estado nulo para que el servidor responda inmediatamente
-                                // con los nuevos rangos y estados para el nuevo cultivo.
-                                Handler(Looper.getMainLooper()).postDelayed({
-                                    enviarDatosInstantaneos()
-                                }, 500) // Espera 500ms a que conecte el WS
+                                Handler(Looper.getMainLooper()).postDelayed({ enviarDatosInstantaneos() }, 500)
                             }
                         }
                         override fun onNothingSelected(p0: AdapterView<*>?) {}
@@ -182,8 +172,23 @@ class MainActivity : AppCompatActivity() {
         runOnUiThread {
             try {
                 val j = JSONObject(texto)
-                txtNombreVerdura.text = "🌱 ${j.optString("txt_verdura")}"
-                txtRangosOptimos.text = j.optString("txt_rangos")
+                txtNombreVerdura.text = "🌱 ${j.optString("txt_verdura")} (Rangos)"
+
+                // --- AQUÍ ESTÁ LA SOLUCIÓN ---
+                limitesJson = j.optJSONObject("limites")
+                if (limitesJson != null) {
+                    val t = limitesJson!!.optJSONObject("temp")
+                    val h = limitesJson!!.optJSONObject("hum")
+                    val p = limitesJson!!.optJSONObject("ph")
+                    val l = limitesJson!!.optJSONObject("luz")
+
+                    txtRangosOptimos.text = "Tem[${t?.optInt("min")}-${t?.optInt("max")}°C] | " +
+                            "Hum[${h?.optInt("min")}-${h?.optInt("max")}%] | " +
+                            "pH[${p?.optInt("min")}-${p?.optInt("max")}] | " +
+                            "Luz[${l?.optInt("min")}-${l?.optInt("max")} Lux]"
+                }
+                // ------------------------------
+
                 estadoActTemp = j.optString("actuador_temp", "VERDE")
                 estadoActHum = j.optString("actuador_hum", "VERDE")
                 estadoActPh = j.optString("actuador_ph", "VERDE")
@@ -194,8 +199,10 @@ class MainActivity : AppCompatActivity() {
                 actualizarLedSCADA(ledPH, txtActuadorPH, "pH", estadoActPh)
                 actualizarLedSCADA(ledLuz, txtActuadorLuz, "Luz", estadoActLuz)
 
-                datosRecibidos = true // Ahora permitimos que la inercia funcione
-            } catch (e: Exception) {}
+                datosRecibidos = true
+            } catch (e: Exception) {
+                txtRangosOptimos.text = "Error al recibir configuración"
+            }
         }
     }
 
@@ -211,20 +218,22 @@ class MainActivity : AppCompatActivity() {
                 if (datosRecibidos) {
                     var huboCambio = false
 
-                    // Lógica inteligente: solo ajusta si el estado es distinto a VERDE
+                    // Función ajustada: si es VERDE, NO hace nada (tolerancia total)
                     fun calcularAjuste(valor: Int, estado: String, factor: Int): Int {
+                        // Si el estado es VERDE, el sistema está en confort.
+                        // Retornamos el valor actual sin moverlo.
                         if (estado == "VERDE") return valor
-                        val direccion = if (estado == "ROJO") -1 else 1
-                        return (valor + (direccion * factor)).coerceIn(0, 1000)
+
+                        // Si NO es VERDE, el actuador (AZUL/ROJO) tiene control total
+                        val direccionActuador = if (estado == "AZUL") 1 else -1
+                        return (valor + (direccionActuador * factor)).coerceIn(0, 1000)
                     }
 
-                    // Aplicamos los ajustes (Manteniendo tus factores de sensibilidad)
                     val nuevaTemp = calcularAjuste(seekTemperatura.progress, estadoActTemp, 1)
-                    val nuevaHum = calcularAjuste(seekHumedad.progress, estadoActHum, 1)
-                    val nuevoPH = calcularAjuste(seekPH.progress, estadoActPh, 1)
-                    val nuevaLuz = calcularAjuste(seekLuz.progress, estadoActLuz, 10)
+                    val nuevaHum  = calcularAjuste(seekHumedad.progress, estadoActHum, 1)
+                    val nuevoPH   = calcularAjuste(seekPH.progress, estadoActPh, 1)
+                    val nuevaLuz  = calcularAjuste(seekLuz.progress, estadoActLuz, 3)
 
-                    // Verificamos si hubo cambios para evitar enviar basura al servidor
                     if (nuevaTemp != seekTemperatura.progress || nuevaHum != seekHumedad.progress ||
                         nuevoPH != seekPH.progress || nuevaLuz != seekLuz.progress) {
 
@@ -232,7 +241,6 @@ class MainActivity : AppCompatActivity() {
                         seekHumedad.progress = nuevaHum
                         seekPH.progress = nuevoPH
                         seekLuz.progress = nuevaLuz
-
                         huboCambio = true
                     }
 
@@ -241,7 +249,7 @@ class MainActivity : AppCompatActivity() {
                         enviarDatosInstantaneos()
                     }
                 }
-                handlerInerciaFisica.postDelayed(this, 500L)
+                handlerInerciaFisica.postDelayed(this, 1200L)
             }
         })
     }
@@ -252,7 +260,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun actualizarDisplaysGraficos() {
-        txtLabelTemperatura.text = "Temperatura: ${seekTemperatura.progress}.0 °C"
+        txtLabelTemperatura.text = "Temperatura: ${seekTemperatura.progress / 1.0f} °C"
         txtLabelHumedad.text = "Humedad Ambiental: ${seekHumedad.progress} %"
         txtLabelPH.text = "Nivel de pH: ${seekPH.progress / 10.0f}"
         txtLabelLuz.text = "Luminosidad: ${seekLuz.progress} Lux"

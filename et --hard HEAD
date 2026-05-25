@@ -1,0 +1,47 @@
+[33mcommit 4df367bc7067128834f3151e7c08a18dacf570ba[m[33m ([m[1;36mHEAD -> [m[1;32mdevelop[m[33m)[m
+Author: Paul Quispe <paul79ok@gmail.com>
+Date:   Sun May 24 10:15:08 2026 -0400
+
+    Checkpoint: Proyecto funcional con FastAPI y Cassandra antes de implementar nuevo nodo
+
+[33mcommit e0d55a2e3911167eacafff77c7eecad4e630e037[m
+Author: Paul Quispe <paul79ok@gmail.com>
+Date:   Sat May 23 10:42:35 2026 -0400
+
+    Estabilización de control: banda muerta, inercia proporcional y setpoint corregido
+
+[33mcommit 41f93fc5f4162366f7a694e517e107aa7a5dc490[m
+Author: Paul Quispe <paul79ok@gmail.com>
+Date:   Fri May 22 07:24:06 2026 -0400
+
+    ya ingresa a sistema pero las barras aslvo una  no sincronizan
+
+[33mcommit 6b71e6dfa2260d91b64d47c2708cae2806ae5f1f[m[33m ([m[1;32mmain[m[33m)[m
+Author: Paul Quispe <paul79ok@gmail.com>
+Date:   Mon May 18 01:04:29 2026 -0400
+
+    feat: formulario RegistrarCultivoActivity corregido y enlazado sin crashes
+
+[33mcommit 435fa55d474a77ad8ed7f247124c276d6da9b58e[m
+Author: Paul Quispe <paul79ok@gmail.com>
+Date:   Sun May 17 19:40:01 2026 -0400
+
+    Refactor: Endpoint de login blindado contra error 422 y lógica de auto-reparación para usuarios y cultivos
+
+[33mcommit a4015d579ccc1d27958cb897a3962b9889dad864[m
+Author: Paul Quispe <paul79ok@gmail.com>
+Date:   Sun May 17 11:05:55 2026 -0400
+
+    Feat: Finaliza panel SCADA v2 con motor de inercia en lazo cerrado e integracion de perturbaciones
+
+[33mcommit 1274d7993ec8cd29d90c07e6a5cb59e60209ab47[m
+Author: Paul Quispe <paul79ok@gmail.com>
+Date:   Sun May 17 10:02:51 2026 -0400
+
+    Fix: Corrección de WebSocket, remoción de función inexistente y reporte completo de telemetría
+
+[33mcommit d0560c573803d5ba0fb1ec0e3303a59e200942c6[m
+Author: Paul Quispe <paul79ok@gmail.com>
+Date:   Sat May 16 17:35:56 2026 -0400
+
+    Primer commit: Backend funcional y esquema CQL de Cassandra respaldado
