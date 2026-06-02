@@ -17,47 +17,63 @@
         <!-- 🏢 BARRA DE CONTROL SUPERIOR (ICONOS OPERATIVOS) -->
         <RelativeLayout
             android:layout_width="match_parent"
-            android:layout_height="56dp"
+            android:layout_height="wrap_content"
             android:background="#FFFFFF"
-            android:paddingHorizontal="16dp"
+            android:padding="16dp"
             android:elevation="4dp">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_centerVertical="true"
-                android:text="HidroponiaPro v4.0"
-                android:textColor="#0F172A"
-                android:textSize="18sp"
-                android:textStyle="bold" />
-
             <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="match_parent"
-                android:layout_alignParentEnd="true"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
 
-                <!-- Icono Agregar Cultivo -->
-                <ImageButton
-                    android:id="@+id/btnRegistrarPlanta"
-                    android:layout_width="40dp"
-                    android:layout_height="40dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="Configurar Nuevo Cultivo"
-                    android:src="@android:drawable/ic_menu_add"
-                    app:tint="#10B981"
-                    android:layout_marginEnd="12dp"/>
+                <RelativeLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content">
 
-                <!-- Icono Cerrar Sesión -->
-                <ImageButton
-                    android:id="@+id/btnCerrarSesion"
-                    android:layout_width="40dp"
-                    android:layout_height="40dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="Cerrar Sesión SCADA"
-                    android:src="@android:drawable/ic_menu_close_clear_cancel"
-                    app:tint="#64748B" />
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="I Cultivo v4.0"
+                        android:textColor="#0F172A"
+                        android:textSize="18sp"
+                        android:textStyle="bold" />
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_alignParentEnd="true"
+                        android:orientation="horizontal">
+
+                        <ImageButton
+                            android:id="@+id/btnRegistrarPlanta"
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:src="@android:drawable/ic_menu_add"
+                            app:tint="#10B981"
+                            android:layout_marginEnd="12dp"/>
+
+                        <ImageButton
+                            android:id="@+id/btnCerrarSesion"
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:src="@android:drawable/ic_menu_close_clear_cancel"
+                            app:tint="#64748B" />
+                    </LinearLayout>
+                </RelativeLayout>
+
+                <TextView
+                    android:id="@+id/txtNombreDispositivo"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Cargando dispositivo..."
+                    android:textColor="#64748B"
+                    android:textSize="12sp"
+                    android:gravity="start"
+                    android:textStyle="italic" />
             </LinearLayout>
         </RelativeLayout>
 

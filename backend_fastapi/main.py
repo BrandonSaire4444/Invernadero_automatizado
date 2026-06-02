@@ -60,30 +60,25 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 # --- LÓGICA CORE (UNIFICADA) ---
-async def guardar_datos_async(payload, estados, origen="SIMULADOR_ANDROID"):
+async def guardar_datos_async(username, payload, estados, origen="SIMULADOR_ANDROID"):
     try:
-        query_insert = """INSERT INTO lecturas_sensores (origen, fecha_hora, temperatura, humedad, ph, luz, act_temp, act_hum, act_ph, act_luz)
-        VALUES (%s, toTimestamp(now()), %s, %s, %s, %s, %s, %s, %s, %s)"""
+        query_insert = """INSERT INTO lecturas_sensores 
+        (username, fecha_hora, temp, hum, ph, luz, act_temp, act_hum, act_ph, act_luz, origen)
+        VALUES (%s, toTimestamp(now()), %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
+        
         await asyncio.to_thread(session.execute, query_insert, 
-            (origen, float(payload['temp']), float(payload['hum']), float(payload['ph']), float(payload['luz']), 
-             estados['temp'], estados['hum'], estados['ph'], estados['luz']))
+            (username, float(payload['temp']), float(payload['hum']), float(payload['ph']), float(payload['luz']), estados['temp'], estados['hum'], estados['ph'], estados['luz'], origen))
     except Exception as e:
-        print(f"DEBUG: Aviso de persistencia: {e}")
+        print(f"DEBUG: Error al guardar para {username}: {e}")
 
 def calcular_estados_y_formatear(payload, cultivo):
-    # Función de utilidad para calcular estados con margen de histéresis
     def obtener_estado(val, min_v, max_v):
         mid = (min_v + max_v) / 2
-        # Margen del 35% para crear una banda de confort amplia y evitar parpadeos
         margen = max((max_v - min_v) * 0.25, 0.5)
-        
-        # Si está dentro del margen central, es VERDE (confort)
         if abs(val - mid) <= margen:
             return "VERDE"
-        # Si está fuera, decide si es AZUL (bajo) o ROJO (alto)
         return "AZUL" if val < (mid - margen) else "ROJO"
 
-    # Calculamos cada estado usando la lógica unificada
     estados = {
         "temp": obtener_estado(float(payload['temp']), cultivo.temp_min, cultivo.temp_max),
         "hum": obtener_estado(float(payload['hum']), cultivo.hum_min, cultivo.hum_max),
@@ -96,32 +91,28 @@ def calcular_estados_y_formatear(payload, cultivo):
 # --- ENDPOINTS API ---
 @app.post("/api/esp32/telemetria/{nodo_id}")
 async def telemetria_esp32(nodo_id: str, payload: dict):
-    # 1. Consultar nodo actual
     res_nodo = await asyncio.to_thread(session.execute, 
         "SELECT id_cultivo FROM nodos_config WHERE nodo_id = %s", (nodo_id,))
     config = res_nodo.one()
     
-    # Lógica de cambio de cultivo si el ESP32 envía 'cambiar': true
     if payload.get("cambiar") == True:
-        # Aquí buscarías el siguiente ID en la lista (simplificado)
         cultivos = await asyncio.to_thread(session.execute, "SELECT id_cultivo FROM config_cultivos WHERE activo = true ALLOW FILTERING")
         lista = [c.id_cultivo for c in cultivos]
         idx = (lista.index(config.id_cultivo) + 1) % len(lista)
         nuevo_id = lista[idx]
         await asyncio.to_thread(session.execute, "UPDATE nodos_config SET id_cultivo = %s WHERE nodo_id = %s", (nuevo_id, nodo_id))
-        config = type('obj', (object,), {'id_cultivo': nuevo_id}) # Actualizamos referencia local
+        config = type('obj', (object,), {'id_cultivo': nuevo_id})
     
-    # 2. Consultar configuración del cultivo (ahora usa el cultivo actual o el nuevo)
     res_cultivo = await asyncio.to_thread(session.execute, 
         "SELECT * FROM config_cultivos WHERE id_cultivo = %s", (config.id_cultivo,))
     cultivo = res_cultivo.one()
     
-    # 3. Calcular estados y añadir nombre_cultivo a la respuesta
     estados = calcular_estados_y_formatear(payload, cultivo)
-    asyncio.create_task(guardar_datos_async(payload, estados, origen=nodo_id))
+    # CORRECCIÓN: Se agrega "admin" o el usuario propietario como primer argumento
+    asyncio.create_task(guardar_datos_async("admin", payload, estados, origen=nodo_id))
     
     respuesta = estados
-    respuesta["nombre_cultivo"] = cultivo.nombre_verdura # <--- AGREGAR ESTO
+    respuesta["nombre_cultivo"] = cultivo.nombre_verdura
     return respuesta
 
 @app.post("/api/usuarios/registrar", status_code=201)
@@ -157,7 +148,10 @@ async def listar_cultivos():
 @app.websocket("/ws/invernadero/{id_cultivo}")
 async def websocket_endpoint(websocket: WebSocket, id_cultivo: str, token: str = None):
     await manager.connect(websocket)
-    if not token or (jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM]).get("sub") is None):
+    decoded = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM]) if token else {}
+    usuario_actual = decoded.get("sub")
+    
+    if not usuario_actual:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
     
@@ -172,7 +166,8 @@ async def websocket_endpoint(websocket: WebSocket, id_cultivo: str, token: str =
             data = await websocket.receive_text()
             payload = json.loads(data)
             estados = calcular_estados_y_formatear(payload, cultivo)
-            asyncio.create_task(guardar_datos_async(payload, estados))
+            # CORRECCIÓN: Se pasa el usuario_actual al guardar
+            asyncio.create_task(guardar_datos_async(usuario_actual, payload, estados))
             
             respuesta = {
                 "txt_verdura": cultivo.nombre_verdura,
@@ -180,7 +175,6 @@ async def websocket_endpoint(websocket: WebSocket, id_cultivo: str, token: str =
                 "actuador_hum": estados['hum'],
                 "actuador_ph": estados['ph'], 
                 "actuador_luz": estados['luz'],
-                # Límites enviados para centrado dinámico en Android
                 "limites": {
                     "temp": {"min": float(cultivo.temp_min), "max": float(cultivo.temp_max)},
                     "hum": {"min": float(cultivo.hum_min), "max": float(cultivo.hum_max)},

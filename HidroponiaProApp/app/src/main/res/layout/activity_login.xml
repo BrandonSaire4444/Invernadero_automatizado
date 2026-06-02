@@ -29,7 +29,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="center"
-                android:text="HIDROPONIA PRO"
+                android:text="I Cultivo"
                 android:textColor="#1A237E"
                 android:textSize="24sp"
                 android:textStyle="bold" />
@@ -40,7 +40,7 @@
                 android:layout_gravity="center"
                 android:layout_marginTop="4dp"
                 android:layout_marginBottom="24dp"
-                android:text="Sistemas de Gestión y Auditoría SCADA"
+                android:text="Proyecto Integrador"
                 android:textColor="#757575"
                 android:textSize="12sp" />
 
@@ -48,7 +48,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Usuario Institucional"
+                android:text="Usuario"
                 android:textColor="#333333"
                 android:textStyle="bold"
                 android:textSize="14sp"/>
@@ -60,7 +60,7 @@
                 android:layout_marginTop="6dp"
                 android:layout_marginBottom="16dp"
                 android:background="@android:drawable/editbox_background"
-                android:hint="Ej: paul_admin"
+                android:hint="Ej: Juanito"
                 android:inputType="textPersonName"
                 android:paddingLeft="12dp"
                 android:textSize="16sp" />
@@ -69,7 +69,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Contraseña de Seguridad"
+                android:text="Contraseña"
                 android:textColor="#333333"
                 android:textStyle="bold"
                 android:textSize="14sp"/>
@@ -92,7 +92,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="50dp"
                 android:backgroundTint="#1A237E"
-                android:text="AUTENTICAR SISTEMA"
+                android:text="INGRESAR"
                 android:textColor="#FFFFFF"
                 android:textSize="16sp"
                 android:textStyle="bold"
