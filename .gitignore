@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 backend_fastapi/venv/
 __pycache__/
 *.pyc
@@ -21,3 +22,20 @@ app/build/
 # Archivos de configuración local (donde podrías guardar credenciales de tu DB o API Keys)
 local.properties
 .env
+=======
+# Entorno virtual Python
+env/
+venv/
+.env/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+db.sqlite3
+
+# Flutter
+dashboard_arduino/.dart_tool/
+dashboard_arduino/build/
+dashboard_arduino/.idea/
+>>>>>>> 0ab22590e3a6e1510adc735fa72feb913611296b

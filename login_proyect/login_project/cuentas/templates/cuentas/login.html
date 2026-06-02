@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Login</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: Arial, sans-serif;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background:
+                linear-gradient(rgba(255,255,255,0.7), rgba(255,255,255,0.9)),
+                url("https://images.unsplash.com/photo-1497250681960-ef046c08a56e?auto=format&fit=crop&w=1200&q=80");
+            background-size: cover;
+            background-position: center;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .card {
+            width: 100%;
+            max-width: 380px;
+            background: white;
+            border-radius: 30px;
+            padding: 35px;
+            box-shadow: 0 15px 40px rgba(0,0,0,0.2);
+            text-align: center;
+        }
+
+        h2 {
+            margin-bottom: 5px;
+            color: #2f5d50;
+        }
+
+        p {
+            font-size: 14px;
+            color: #777;
+            margin-bottom: 25px;
+        }
+
+        input {
+            width: 100%;
+            padding: 14px;
+            margin-bottom: 15px;
+            border-radius: 12px;
+            border: 1px solid #ddd;
+            font-size: 14px;
+        }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            border-radius: 25px;
+            border: none;
+            background: #2f7d5c;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #25694c;
+        }
+
+        .bottom {
+            margin-top: 20px;
+            font-size: 14px;
+        }
+
+        .bottom a {
+            color: #2f7d5c;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        @media (max-width: 480px) {
+            .card {
+                padding: 25px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>Bienvenido</h2>
+    <p>Inicia sesión en tu cuenta</p>
+
+    <form method="POST">
+        {% csrf_token %}
+
+        {{ form.username }}
+        {{ form.password }}
+
+        <button type="submit">Iniciar sesión</button>
+    </form>
+
+    <div class="bottom">
+        ¿No tienes cuenta?
+        <a href="{% url 'registro' %}">Regístrate</a>
+    </div>
+</div>
+
+</body>
+</html>

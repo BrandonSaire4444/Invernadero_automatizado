@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Registro</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: Arial, sans-serif;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background:
+                linear-gradient(rgba(255,255,255,0.75), rgba(255,255,255,0.9)),
+                url("https://images.unsplash.com/photo-1497250681960-ef046c08a56e?auto=format&fit=crop&w=1200&q=80");
+            background-size: cover;
+            background-position: center;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .card {
+            width: 100%;
+            max-width: 390px;
+            background: white;
+            border-radius: 30px;
+            padding: 35px;
+            box-shadow: 0 15px 40px rgba(0,0,0,0.2);
+            text-align: center;
+            position: relative;
+        }
+
+        .back {
+            position: absolute;
+            top: 22px;
+            left: 22px;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: #e8f3ec;
+            color: #2f7d5c;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-decoration: none;
+            font-size: 22px;
+            font-weight: bold;
+        }
+
+        h2 {
+            margin-top: 35px;
+            margin-bottom: 6px;
+            color: #2f5d50;
+            font-size: 32px;
+        }
+
+        .subtitle {
+            font-size: 14px;
+            color: #777;
+            margin-bottom: 28px;
+        }
+
+        form p {
+            margin: 0 0 14px 0;
+            text-align: left;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 13px;
+            font-weight: bold;
+            color: #2f5d50;
+        }
+
+        input {
+            width: 100%;
+            padding: 14px;
+            border-radius: 12px;
+            border: 1px solid #d7e5dc;
+            background: #eaf4ee;
+            font-size: 14px;
+            outline: none;
+        }
+
+        input:focus {
+            border-color: #2f7d5c;
+            background: #f5fbf7;
+        }
+
+        .helptext,
+        ul {
+            display: none;
+        }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            margin-top: 12px;
+            border-radius: 25px;
+            border: none;
+            background: #2f7d5c;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #25694c;
+        }
+
+        .bottom {
+            margin-top: 22px;
+            font-size: 14px;
+            color: #777;
+        }
+
+        .bottom a {
+            color: #2f7d5c;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        .errorlist {
+            display: block;
+            color: #c0392b;
+            font-size: 12px;
+            list-style: none;
+            padding: 0;
+            margin: 0 0 8px 0;
+        }
+
+        @media (max-width: 480px) {
+            .card {
+                padding: 28px;
+                border-radius: 25px;
+            }
+
+            h2 {
+                font-size: 28px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <a class="back" href="{% url 'inicio' %}">‹</a>
+
+    <h2>Registro</h2>
+    <p class="subtitle">Crea tu nueva cuenta</p>
+
+    <form method="POST">
+        {% csrf_token %}
+        {{ form.as_p }}
+
+        <button type="submit">Crear cuenta</button>
+    </form>
+
+    <div class="bottom">
+        ¿Ya tienes cuenta?
+        <a href="{% url 'login' %}">Inicia sesión</a>
+    </div>
+</div>
+
+</body>
+</html>

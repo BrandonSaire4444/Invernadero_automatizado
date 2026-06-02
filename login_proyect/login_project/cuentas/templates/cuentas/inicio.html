@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Bienvenido</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: Arial, sans-serif;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background:
+                linear-gradient(rgba(10, 60, 35, 0.55), rgba(10, 60, 35, 0.55)),
+                url("https://images.unsplash.com/photo-1501004318641-b39e6451bec6?auto=format&fit=crop&w=1200&q=80");
+            background-size: cover;
+            background-position: center;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .phone-card {
+            width: 100%;
+            max-width: 390px;
+            min-height: 650px;
+            border-radius: 35px;
+            overflow: hidden;
+            background:
+                linear-gradient(rgba(10, 60, 35, 0.35), rgba(10, 60, 35, 0.75)),
+                url("https://images.unsplash.com/photo-1497250681960-ef046c08a56e?auto=format&fit=crop&w=900&q=80");
+            background-size: cover;
+            background-position: center;
+            color: white;
+            padding: 45px 35px;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            box-shadow: 0 15px 40px rgba(0,0,0,0.35);
+        }
+
+        h1 {
+            font-size: 44px;
+            line-height: 1.2;
+            margin-bottom: 170px;
+        }
+
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 15px;
+            margin-top: 15px;
+            text-align: center;
+            border-radius: 16px;
+            text-decoration: none;
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        .btn-login {
+            background: rgba(255,255,255,0.25);
+            color: white;
+        }
+
+        .btn-register {
+            color: white;
+        }
+
+        @media (max-width: 480px) {
+            .phone-card {
+                min-height: 90vh;
+                border-radius: 25px;
+            }
+
+            h1 {
+                font-size: 38px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="phone-card">
+        <h1>La mejor app<br>para tus plantas</h1>
+
+        <a class="btn btn-login" href="{% url 'login' %}">Iniciar sesión</a>
+        <a class="btn btn-register" href="{% url 'registro' %}">Crear una cuenta</a>
+    </div>
+
+</body>
+</html>
